@@ -1,0 +1,6 @@
+{
+  "name": "SIGAP-SPENSAWA",
+  "description": "Sistem Informasi dan Gerbang Aktivitas Pendidik SMPN 1 Wanayasa. Platform digital terintegrasi untuk manajemen jurnal, guru piket, wali kelas, ekskul, dan BK.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
