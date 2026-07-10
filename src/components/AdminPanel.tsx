@@ -34,7 +34,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   // State Pendaftaran Manual Siswa
   const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '' });
   
-  // State Pendaftaran Manual Akun Guru Baru (Sesuai Skema Tabel public.user & public.profiles)
+  // State Pendaftaran Manual Akun Guru Baru (Sesuai Skema Tabel public.users & public.profiles)
   const [newGuru, setNewGuru] = useState({ 
     name: '', 
     username: '', 
