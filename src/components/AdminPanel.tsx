@@ -11,8 +11,6 @@ interface AdminPanelProps {
   onBackToDashboard?: () => void;
 }
 
-const DAYS_OF_WEEK = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
-
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const context = useApp() || {};
   const bulkInsertSiswa = context.bulkInsertSiswa || (async () => {});
@@ -22,12 +20,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const gurus = context.gurus || [];
   const siswa = context.siswa || [];
 
-  // Tab Utama Kontrol Navigasi
+  // Tab Menu Utama
   const [mainTab, setMainTab] = useState<'excel_import' | 'manage_data'>('excel_import');
   const [uploadType, setUploadType] = useState<'siswa' | 'guru' | 'pelanggaran'>('siswa');
   const [activeSubTab, setActiveSubTab] = useState<'siswa' | 'guru'>('siswa');
   
-  // State Input Pelanggaran BK
+  // State Pelanggaran BK Manual
   const [katManual, setKatManual] = useState('Ringan');
   const [jenisManual, setJenisManual] = useState('');
   const [bobotManual, setBobotManual] = useState('5');
@@ -36,7 +34,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   // State Pendaftaran Manual Siswa
   const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '' });
   
-  // State Input Pembuatan Akun Guru Baru Manual (Sesuai skema database kustom Anda)
+  // State Pendaftaran Manual Akun Guru Baru (Sesuai Skema Tabel public.user & public.profiles)
   const [newGuru, setNewGuru] = useState({ 
     name: '', 
     username: '', 
@@ -49,7 +47,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     namaEkskul: ''
   });
 
-  // State Kontrol Dialog Pop-up (Edit & Reset Sandi)
+  // State Modal Aksi Edit & Reset Sandi
   const [editingItem, setEditingItem] = useState<{ type: 'siswa' | 'guru'; data: any } | null>(null);
   const [passwordModal, setPasswordModal] = useState<{ isOpen: boolean; userId: string; userName: string; newPass: string } | null>(null);
 
@@ -66,7 +64,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
       dataTemplate = [{ "nisn": "0401234561", "nama_siswa": "Nama Siswa Contoh A", "kelas": "VII-A" }];
     } else if (uploadType === 'guru') {
       dataTemplate = [{ 
-        "nama_lengkap": "Nama Guru Lengkap", "username": "guru123", "password": "password123",
+        "nama_lengkap": "Muhamad Sidik Heryana, S.Pd", "username": "sidik95", "password": "password123",
         "role": "guru_mapel", "mata_pelajaran": "IPA Terpadu", "is_wali_kelas": "true", 
         "kelas_wali": "VII-A", "is_guru_piket": "false", "nama_ekstrakurikuler": "Hortikultura" 
       }];
@@ -111,7 +109,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
             const isWali = d.is_wali_kelas === 'true' || d.is_wali_kelas === '1';
             const isPiket = d.is_guru_piket === 'true' || d.is_guru_piket === '1';
 
-            // 1. Memasukkan kredensial login ke tabel kustom 'user'
+            // 1. Simpan data otentikasi login ke tabel kustom 'user'
             const { data: userData, error: userError } = await supabase
               .from('user')
               .insert([{ username: d.username, password: d.password, role: d.role || 'guru_mapel' }])
@@ -120,7 +118,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
             if (userError) throw userError;
 
-            // 2. Memasukkan biodata ke tabel 'profiles' dengan referensi 'user_id'
+            // 2. Simpan biodata ke tabel 'profiles' terikat melalui 'user_id'
             await supabase.from('profiles').insert([{
               user_id: userData.id,
               nama_lengkap: d.nama_lengkap || d.name || '',
@@ -132,10 +130,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
               nama_ekstrakurikuler: d.nama_ekstrakurikuler || null
             }]);
           }
-          setUploadSuccess("Sukses mengimpor data guru!");
+          setUploadSuccess("Sukses mengimpor data repositori guru via Excel!");
         } else if (uploadType === 'pelanggaran') {
           const payload = normalizedData.map((d: any) => ({
-            kategori: d.kategori || 'Ringan', jenis_cases: d.jenis_kasus || '', jenis_cases_id: '', jenis_kasus: d.jenis_kasus || '', bobot: Number(d.bobot || 0)
+            kategori: d.kategori || 'Ringan', jenis_cases: d.jenis_kasus || '', jenis_kasus: d.jenis_kasus || '', bobot: Number(d.bobot || 0)
           }));
           await bulkInsertPelanggaran(payload);
           setUploadSuccess(`Sukses memproses ${payload.length} aturan tata tertib!`);
@@ -172,7 +170,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     finally { setIsSubmitting(false); }
   };
 
-  // --- FIX: INPUT SIMULTAN TERPETIK DENGAN BENAR TANPA NOT-NULL ERROR ---
+  // --- REGISTRASI DUA TABEL: SIMULTAN INPUT KE 'USER' & 'PROFILES' ---
   const handleAddGuruManual = async (e: FormEvent) => {
     e.preventDefault();
     if (!newGuru.name || !newGuru.username || !newGuru.password) {
@@ -181,12 +179,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     }
     setIsSubmitting(true);
     try {
-      // 1. Simpan data otentikasi ke tabel 'user' kustom Anda
+      // Langkah 1: Simpan data otentikasi login ke tabel kustom 'user'
       const { data: userData, error: userError } = await supabase
         .from('user')
         .insert([{
           username: newGuru.username,
-          password: newGuru.password, // Memastikan properti terisi 100% ke kolom password
+          password: newGuru.password, // Terpetik aman 100% tanpa error NOT NULL constraint
           role: newGuru.role
         }])
         .select()
@@ -194,7 +192,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
       if (userError) throw userError;
 
-      // 2. Hubungkan ID data login ke tabel 'profiles' sebagai 'user_id'
+      // Langkah 2: Hubungkan ID relasi data login ke tabel 'profiles' sebagai 'user_id'
       const { error: profileError } = await supabase
         .from('profiles')
         .insert([{
@@ -229,6 +227,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         const { error } = await supabase.from('students').update({ nisn: editingItem.data.nisn || null, nama_siswa: editingItem.data.name, kelas: editingItem.data.kelas }).eq('id', editingItem.data.id);
         if (error) throw error;
       } else {
+        // Update informasi profil guru
         const { error: profErr } = await supabase.from('profiles').update({
           nama_lengkap: editingItem.data.name,
           mata_pelajaran: editingItem.data.mataPelajaran || null,
@@ -241,6 +240,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         
         if (profErr) throw profErr;
 
+        // Sinkronisasi data login di tabel user jika username atau role diubah
         if (editingItem.data.user_id) {
           await supabase.from('user').update({ 
             role: editingItem.data.role, 
@@ -261,7 +261,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
       if (type === 'siswa') {
         await supabase.from('students').delete().eq('id', id);
       } else {
+        // Hapus biodata profil terlebih dahulu
         await supabase.from('profiles').delete().eq('id', id);
+        // Hapus data otentikasi login pada tabel user
         if (userId) {
           await supabase.from('user').delete().eq('id', userId);
         }
@@ -276,6 +278,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     if (!passwordModal || !passwordModal.newPass.trim()) return;
     setIsSubmitting(true);
     try {
+      // Perbaikan password langsung ke kolom password tabel kustom 'user'
       const { error } = await supabase
         .from('user')
         .update({ password: passwordModal.newPass })
@@ -318,6 +321,42 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
               {uploadSuccess && <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 font-medium"><CheckCircle className="w-4 h-4 text-emerald-600" /> {uploadSuccess}</div>}
               {uploadError && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-2 font-medium"><AlertCircle className="w-4 h-4 text-rose-600" /> {uploadError}</div>}
+
+              {uploadType === 'pelanggaran' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+                  <form onSubmit={handleSaveManualPelanggaran} className="space-y-4">
+                    <h5 className="text-xs font-bold uppercase text-slate-700">Form Jenis Pelanggaran BK</h5>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Kategori</label>
+                        <select value={katManual} onChange={(e) => setKatManual(e.target.value)} className="w-full bg-slate-50 border rounded px-2 py-1 text-xs text-slate-700"><option value="Ringan">Ringan</option><option value="Sedang">Sedang</option><option value="Berat">Berat</option><option value="Sangat Berat">Sangat Berat</option></select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Bobot Skor</label>
+                        <input type="number" value={bobotManual} onChange={(e) => setBobotManual(e.target.value)} className="w-full bg-slate-50 border rounded px-2 py-1 text-xs text-slate-700" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Jenis Kasus Pelanggaran</label>
+                      <input type="text" required value={jenisManual} onChange={(e) => setJenisManual(e.target.value)} placeholder="Contoh: Berkelahi di sekolah" className="w-full bg-slate-50 border rounded px-3 py-1.5 text-xs" />
+                    </div>
+                    {successManual && <p className="text-xs text-emerald-700 bg-emerald-50 p-2 rounded">{successManual}</p>}
+                    <button type="submit" className="w-full bg-slate-900 text-white font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-1.5 shadow"><Save className="w-4 h-4" /> Simpan Pelanggaran</button>
+                  </form>
+
+                  <div className="space-y-3">
+                    <h5 className="text-xs font-bold uppercase text-slate-700">List Aturan Pelanggaran Aktif ({masterPelanggarans.length})</h5>
+                    <div className="max-h-[220px] overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl px-3 bg-slate-50/40">
+                      {masterPelanggarans.map(p => (
+                        <div key={p.id} className="py-2.5 flex justify-between items-center text-xs gap-2">
+                          <div><p className="font-semibold text-slate-800">{p.jenis_kasus}</p><span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 mt-1 inline-block uppercase">{p.kategori}</span></div>
+                          <span className="bg-rose-50 text-rose-700 border border-rose-100 rounded px-2 py-0.5 font-bold text-[10px] shrink-0">Poin: {p.bobot}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -340,7 +379,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                   <div><label className="block text-[11px] font-bold text-slate-500 mb-1">Kelas</label>
                     <select value={newSiswa.kelas} onChange={(e) => setNewSiswa({ ...newSiswa, kelas: e.target.value })} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option value="">-- Pilih Kelas --</option><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
                   </div>
-                  <button type="submit" className="w-full py-2 bg-sky-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2"><PlusCircle className="w-3.5 h-3.5" /> Simpan Siswa</button>
+                  <button type="submit" className="w-full py-2 bg-sky-600 text-white font-bold text-xs rounded-xl hover:bg-sky-700 flex items-center justify-center gap-2 transition"><PlusCircle className="w-3.5 h-3.5" /> Simpan Siswa</button>
                 </form>
               </div>
 
