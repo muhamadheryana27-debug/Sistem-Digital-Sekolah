@@ -11,8 +11,6 @@ interface AdminPanelProps {
   onBackToDashboard?: () => void;
 }
 
-const DAYS_OF_WEEK = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
-
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const context = useApp() || {};
   const bulkInsertSiswa = context.bulkInsertSiswa || (async () => {});
@@ -22,7 +20,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const gurus = context.gurus || [];
   const siswa = context.siswa || [];
 
-  // Tab Menu Navigation
+  // Tab Utama Kontrol Navigasi
   const [mainTab, setMainTab] = useState<'excel_import' | 'manage_data'>('excel_import');
   const [uploadType, setUploadType] = useState<'siswa' | 'guru' | 'pelanggaran'>('siswa');
   const [activeSubTab, setActiveSubTab] = useState<'siswa' | 'guru'>('siswa');
@@ -36,7 +34,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   // State Pendaftaran Manual Siswa
   const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '' });
   
-  // State Input Pembuatan Akun Guru Baru Manual (Sesuai skema database asli Anda)
+  // State Input Pembuatan Akun Guru Baru Manual (Dipetakan ke tabel kustom user & profiles)
   const [newGuru, setNewGuru] = useState({ 
     name: '', 
     username: '', 
@@ -66,8 +64,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
       dataTemplate = [{ "nisn": "0401234561", "nama_siswa": "Nama Siswa Contoh A", "kelas": "VII-A" }];
     } else if (uploadType === 'guru') {
       dataTemplate = [{ 
-        "nama_lengkap": "Muhamad Sidik Heryana, S.Pd", "username": "sidik95", "password": "sandi123",
-        "role": "guru_mapel", "mata_pelajaran": "IPA", "is_wali_kelas": "true", 
+        "nama_lengkap": "Nama Guru Lengkap", "username": "guru123", "password": "password123",
+        "role": "guru_mapel", "mata_pelajaran": "IPA Terpadu", "is_wali_kelas": "true", 
         "kelas_wali": "VII-A", "is_guru_piket": "false", "nama_ekstrakurikuler": "Hortikultura" 
       }];
     } else {
@@ -111,16 +109,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
             const isWali = d.is_wali_kelas === 'true' || d.is_wali_kelas === '1';
             const isPiket = d.is_guru_piket === 'true' || d.is_guru_piket === '1';
 
-            // 1. Insert kredensial ke tabel 'user'
+            // 1. Memasukkan kredensial login ke tabel kustom 'user'
             const { data: userData, error: userError } = await supabase
               .from('user')
-              .insert([{ username: d.username, password: d.password_awal || d.password, role: d.role || 'guru_mapel' }])
+              .insert([{ username: d.username, password: d.password, role: d.role || 'guru_mapel' }])
               .select()
               .single();
 
             if (userError) throw userError;
 
-            // 2. Insert profil ke tabel 'profiles' terikat ke user_id
+            // 2. Memasukkan biodata ke tabel 'profiles' dengan referensi 'user_id'
             await supabase.from('profiles').insert([{
               user_id: userData.id,
               nama_lengkap: d.nama_lengkap || d.name || '',
@@ -132,7 +130,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
               nama_ekstrakurikuler: d.nama_ekstrakurikuler || null
             }]);
           }
-          setUploadSuccess("Sukses memproses impor repositori data guru!");
+          setUploadSuccess("Sukses mengimpor data guru!");
         } else if (uploadType === 'pelanggaran') {
           const payload = normalizedData.map((d: any) => ({
             kategori: d.kategori || 'Ringan', jenis_cases: d.jenis_kasus || '', jenis_kasus: d.jenis_kasus || '', bobot: Number(d.bobot || 0)
@@ -172,7 +170,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     finally { setIsSubmitting(false); }
   };
 
-  // --- SINKRONISASI AKUN MANUAL: TABEL USER & PROFILES ---
+  // --- REGISTRASI DUA TABEL: SIMULTAN INPUT KE 'USER' & 'PROFILES' ---
   const handleAddGuruManual = async (e: FormEvent) => {
     e.preventDefault();
     if (!newGuru.name || !newGuru.username || !newGuru.password) {
@@ -181,7 +179,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     }
     setIsSubmitting(true);
     try {
-      // 1. Tambahkan ke tabel 'user' asli Anda untuk keperluan login
+      // Langkah 1: Simpan data otentikasi ke tabel kustom 'user' Anda
       const { data: userData, error: userError } = await supabase
         .from('user')
         .insert([{
@@ -194,7 +192,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
       if (userError) throw userError;
 
-      // 2. Hubungkan ID ke tabel 'profiles' melalui 'user_id'
+      // Langkah 2: Hubungkan hasil ID data login ke tabel 'profiles' sebagai 'user_id'
       const { error: profileError } = await supabase
         .from('profiles')
         .insert([{
@@ -229,7 +227,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         const { error } = await supabase.from('students').update({ nisn: editingItem.data.nisn || null, nama_siswa: editingItem.data.name, kelas: editingItem.data.kelas }).eq('id', editingItem.data.id);
         if (error) throw error;
       } else {
-        // Update data ke tabel profiles
+        // Update informasi profil guru
         const { error: profErr } = await supabase.from('profiles').update({
           nama_lengkap: editingItem.data.name,
           mata_pelajaran: editingItem.data.mataPelajaran || null,
@@ -242,9 +240,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         
         if (profErr) throw profErr;
 
-        // Update role di tabel user jika dirubah
-        if (editingItem.data.user_id && editingItem.data.role) {
-          await supabase.from('user').update({ role: editingItem.data.role, username: editingItem.data.username }).eq('id', editingItem.data.user_id);
+        // Sinkronisasi data login di tabel user jika username atau role diubah
+        if (editingItem.data.user_id) {
+          await supabase.from('user').update({ 
+            role: editingItem.data.role, 
+            username: editingItem.data.username 
+          }).eq('id', editingItem.data.user_id);
         }
       }
       alert('Perubahan data berhasil disimpan!');
@@ -260,8 +261,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
       if (type === 'siswa') {
         await supabase.from('students').delete().eq('id', id);
       } else {
-        // Hapus profiles dahulu baru kemudian tabel user relasinya
+        // Hapus biodata profil terlebih dahulu
         await supabase.from('profiles').delete().eq('id', id);
+        // Putus dan hapus data otentikasi login pada tabel user
         if (userId) {
           await supabase.from('user').delete().eq('id', userId);
         }
@@ -276,7 +278,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     if (!passwordModal || !passwordModal.newPass.trim()) return;
     setIsSubmitting(true);
     try {
-      // Mengubah password pada tabel user kustom Anda
+      // Mutasi perbaikan password langsung ke kolom password tabel kustom 'user'
       const { error } = await supabase
         .from('user')
         .update({ password: passwordModal.newPass })
@@ -314,7 +316,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
               <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-200 hover:border-sky-500 hover:bg-sky-50/20 rounded-2xl p-8 flex flex-col items-center justify-center text-center bg-slate-50/50 transition cursor-pointer group">
                 <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 shadow-sm mb-4"><UploadCloud className="w-6 h-6" /></div>
                 <h4 className="text-sm font-bold text-slate-800">{isUploading ? 'Sedang Membaca...' : `Pilih Berkas Excel untuk Master ${uploadType === 'pelanggaran' ? 'Pelanggaran' : uploadType === 'siswa' ? 'Siswa' : 'Guru'}`}</h4>
-                <button type="button" onClick={(e) => { e.stopPropagation(); handleDownloadTemplate(); }} className="inline-flex items-center gap-1.5 bg-white border px-3 py-1.5 rounded-lg text-xs font-bold text-sky-600 mt-5 shadow hover:bg-slate-100 transition"><FileSpreadsheet className="w-4 h-4" /> Unduh Format Template Excel</button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); handleDownloadTemplate(); }} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold text-sky-600 mt-5 shadow hover:bg-slate-100 transition"><FileSpreadsheet className="w-4 h-4" /> Unduh Format Template Excel</button>
               </div>
 
               {uploadSuccess && <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 font-medium"><CheckCircle className="w-4 h-4 text-emerald-600" /> {uploadSuccess}</div>}
@@ -405,8 +407,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                     )}
                   </div>
                   
-                  <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
-                    <div className="flex items-center justify-between"><span className="text-[11px] font-bold text-slate-600">Aktif Tugas Piket</span><input type="checkbox" checked={newGuru.isGuruPiket} onChange={(e) => setNewGuru({ ...newGuru, isGuruPiket: e.target.checked })} className="w-4 h-4 text-sky-600" /></div>
+                  <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-600">Aktif Tugas Piket</span>
+                    <input type="checkbox" checked={newGuru.isGuruPiket} onChange={(e) => setNewGuru({ ...newGuru, isGuruPiket: e.target.checked })} className="w-4 h-4 text-sky-600" />
                   </div>
 
                   <div>
