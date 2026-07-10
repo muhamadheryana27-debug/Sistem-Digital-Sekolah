@@ -31,8 +31,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const [bobotManual, setBobotManual] = useState('5');
   const [successManual, setSuccessManual] = useState('');
 
-  // State Pendaftaran Manual Siswa (Menambahkan jenisKelamin)
-  const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '', jenisKelamin: 'Laki-laki' });
+  // State Pendaftaran Manual Siswa (Default menggunakan format Enum database)
+  const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '', jenisKelamin: 'L' });
   
   // State Input Pembuatan Akun Guru Baru Manual
   const [newGuru, setNewGuru] = useState({ 
@@ -58,11 +58,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- DOWNLOAD TEMPLATE EXCEL DENGAN KOLOM TEPAT ---
+  // Fungsi helper konversi string teks bebas Excel ke nilai Enum database ('L' / 'P')
+  const convertToDbEnum = (val: string): string => {
+    const cleanVal = String(val).trim().toLowerCase();
+    if (cleanVal === 'l' || cleanVal.startsWith('laki') || cleanVal === 'pria') return 'L';
+    if (cleanVal === 'p' || cleanVal.startsWith('perempuan') || cleanVal === 'wanita') return 'P';
+    return 'L'; // Fallback default aman jika kosong
+  };
+
   const handleDownloadTemplate = () => {
     let dataTemplate: any[] = [];
     if (uploadType === 'siswa') {
-      dataTemplate = [{ "nisn": "0401234561", "nama_siswa": "Nama Siswa Contoh A", "kelas": "VII-A", "jenis_kelamin": "Laki-laki" }];
+      dataTemplate = [{ "nisn": "0401234561", "nama_siswa": "Nama Siswa Contoh A", "kelas": "VII-A", "jenis_kelamin": "Laki-laki (atau ketik L)" }];
     } else if (uploadType === 'guru') {
       dataTemplate = [{ 
         "nama_lengkap": "Nama Guru Lengkap", "username": "guru123", "password": "password123",
@@ -78,7 +85,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     XLSX.writeFile(wb, `template_${uploadType}_sigap.xlsx`);
   };
 
-  // --- FIX PARSING EXCEL SISWA DENGAN KOLOM TEPAT ---
+  // --- FIX: PARSING EXCEL DENGAN MAPPER ENUM DATABASE AMAN ---
   const handleFileProcess = async (file: File) => {
     if (!file) return;
     setIsUploading(true);
@@ -101,14 +108,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         });
 
         if (uploadType === 'siswa') {
-          // Melakukan sinkronisasi langsung ke tabel students di Supabase dengan kolom jenis_kelamin
           for (const d of normalizedData) {
-            const jkValue = d.jenis_kelamin || 'Laki-laki';
+            // Konversi teks "Laki-laki" dari Excel menjadi 'L' / 'P' sesuai jk_enum database
+            const mappedJk = convertToDbEnum(d.jenis_kelamin);
+
             const { error: insertSiswaErr } = await supabase.from('students').insert([{
               nisn: d.nisn || null,
               nama_siswa: d.nama_siswa || d.name || '',
               kelas: d.kelas || '',
-              jenis_kelamin: jkValue
+              jenis_kelamin: mappedJk
             }]);
             if (insertSiswaErr) throw insertSiswaErr;
           }
@@ -163,7 +171,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     } catch (err: any) { alert(err.message); }
   };
 
-  // --- FIX INPUT MANUAL SISWA DENGAN KOLOM TEPAT ---
+  // --- FIX: TAMBAH SISWA MANUAL DENGAN ENUM VALUE YANG VALID ---
   const handleAddSiswaManual = async (e: FormEvent) => {
     e.preventDefault();
     if (!newSiswa.name || !newSiswa.kelas) return;
@@ -173,11 +181,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         nisn: newSiswa.nisn || null, 
         nama_siswa: newSiswa.name, 
         kelas: newSiswa.kelas,
-        jenis_kelamin: newSiswa.jenisKelamin
+        jenis_kelamin: newSiswa.jenisKelamin // Berisi 'L' atau 'P'
       }]);
       if (error) throw error;
       alert(`Berhasil menambahkan siswa: ${newSiswa.name}`);
-      setNewSiswa({ nisn: '', name: '', kelas: '', jenisKelamin: 'Laki-laki' });
+      setNewSiswa({ nisn: '', name: '', kelas: '', jenisKelamin: 'L' });
       window.location.reload();
     } catch (err: any) { alert(err.message); } 
     finally { setIsSubmitting(false); }
@@ -358,7 +366,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 mb-1">Jenis Kelamin</label>
-                      <select value={newSiswa.jenisKelamin} onChange={(e) => setNewSiswa({ ...newSiswa, jenisKelamin: e.target.value })} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select>
+                      <select value={newSiswa.jenisKelamin} onChange={(e) => setNewSiswa({ ...newSiswa, jenisKelamin: e.target.value })} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option value="L">Laki-laki</option><option value="P">Perempuan</option></select>
                     </div>
                   </div>
                   
@@ -368,7 +376,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
               <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div className="p-4 bg-slate-50/50 border-b border-slate-100"><h4 className="text-xs font-bold text-slate-700">Daftar Total Siswa ({siswa.length})</h4></div>
-                <div className="overflow-y-auto max-h-[450px]">
+                <div className="overflow-x-auto max-h-[450px]">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 border-b">
                       <tr><th className="p-3 pl-4">NISN</th><th className="p-3">Nama</th><th className="p-3">Kelas & JK</th><th className="p-3 text-center">Aksi</th></tr>
@@ -377,17 +385,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                       {siswa.map((s: any) => (
                         <tr key={s.id} className="hover:bg-slate-50/40">
                           <td className="p-3 pl-4 font-mono font-medium text-slate-400">{s.nisn || '-'}</td>
-                          <td className="p-3 font-bold text-slate-800">{s.name || s.nama_siswa}</td>
+                          <td className="p-3 font-bold text-slate-800">{s.nama_siswa || s.name}</td>
                           <td className="p-3">
                             <div className="flex gap-1">
                               <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600 font-semibold">{s.kelas}</span>
-                              <span className="px-2 py-0.5 bg-sky-50 rounded text-sky-700 font-medium text-[10px]">{s.jenis_kelamin || '-'}</span>
+                              <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${s.jenis_kelamin === 'P' ? 'bg-rose-50 text-rose-600' : 'bg-sky-50 text-sky-600'}`}>{s.jenis_kelamin === 'P' ? 'Perempuan (P)' : 'Laki-laki (L)'}</span>
                             </div>
                           </td>
                           <td className="p-3 text-center">
                             <div className="flex justify-center gap-2">
-                              <button onClick={() => setEditingItem({ type: 'siswa', data: { id: s.id, nisn: s.nisn, name: s.name || s.nama_siswa, kelas: s.kelas, jenisKelamin: s.jenis_kelamin || 'Laki-laki' } })} className="p-1 text-sky-600 hover:bg-sky-50 rounded"><Edit2 className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => handleDeleteItem('siswa', s.id, s.name || s.nama_siswa)} className="p-1 text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => setEditingItem({ type: 'siswa', data: { id: s.id, nisn: s.nisn, name: s.nama_siswa || s.name, kelas: s.kelas, jenisKelamin: s.jenis_kelamin || 'L' } })} className="p-1 text-sky-600 hover:bg-sky-50 rounded"><Edit2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleDeleteItem('siswa', s.id, s.nama_siswa || s.name)} className="p-1 text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                             </div>
                           </td>
                         </tr>
@@ -401,7 +409,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
           {activeSubTab === 'guru' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Blok Admin Panel Guru tetap terjaga utuh sesuai dengan modifikasi users */}
               <div className="bg-white p-5 border border-slate-200 rounded-2xl shadow-sm h-fit space-y-4">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><PlusCircle className="w-4 h-4 text-sky-600" /> Buat Akun Guru</h3>
                 <form onSubmit={handleAddGuruManual} className="space-y-3">
@@ -489,7 +496,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-400 mb-1">Jenis Kelamin</label>
-                      <select value={editingItem.data.jenisKelamin} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, jenisKelamin: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl"><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select>
+                      <select value={editingItem.data.jenisKelamin} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, jenisKelamin: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl"><option value="L">Laki-laki (L)</option><option value="P">Perempuan (P)</option></select>
                     </div>
                   </div>
                 </>
