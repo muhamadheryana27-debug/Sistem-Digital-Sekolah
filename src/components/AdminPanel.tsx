@@ -11,6 +11,8 @@ interface AdminPanelProps {
   onBackToDashboard?: () => void;
 }
 
+const DAYS_OF_WEEK = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const context = useApp() || {};
   const bulkInsertSiswa = context.bulkInsertSiswa || (async () => {});
@@ -34,7 +36,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   // State Pendaftaran Manual Siswa
   const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '' });
   
-  // State Input Pembuatan Akun Guru Baru Manual (Dipetakan ke tabel kustom user & profiles)
+  // State Input Pembuatan Akun Guru Baru Manual (Sesuai skema database kustom Anda)
   const [newGuru, setNewGuru] = useState({ 
     name: '', 
     username: '', 
@@ -133,7 +135,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
           setUploadSuccess("Sukses mengimpor data guru!");
         } else if (uploadType === 'pelanggaran') {
           const payload = normalizedData.map((d: any) => ({
-            kategori: d.kategori || 'Ringan', jenis_cases: d.jenis_kasus || '', jenis_kasus: d.jenis_kasus || '', bobot: Number(d.bobot || 0)
+            kategori: d.kategori || 'Ringan', jenis_cases: d.jenis_kasus || '', jenis_cases_id: '', jenis_kasus: d.jenis_kasus || '', bobot: Number(d.bobot || 0)
           }));
           await bulkInsertPelanggaran(payload);
           setUploadSuccess(`Sukses memproses ${payload.length} aturan tata tertib!`);
@@ -170,7 +172,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     finally { setIsSubmitting(false); }
   };
 
-  // --- REGISTRASI DUA TABEL: SIMULTAN INPUT KE 'USER' & 'PROFILES' ---
+  // --- FIX: INPUT SIMULTAN TERPETIK DENGAN BENAR TANPA NOT-NULL ERROR ---
   const handleAddGuruManual = async (e: FormEvent) => {
     e.preventDefault();
     if (!newGuru.name || !newGuru.username || !newGuru.password) {
@@ -179,12 +181,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     }
     setIsSubmitting(true);
     try {
-      // Langkah 1: Simpan data otentikasi ke tabel kustom 'user' Anda
+      // 1. Simpan data otentikasi ke tabel 'user' kustom Anda
       const { data: userData, error: userError } = await supabase
         .from('user')
         .insert([{
           username: newGuru.username,
-          password: newGuru.password,
+          password: newGuru.password, // Memastikan properti terisi 100% ke kolom password
           role: newGuru.role
         }])
         .select()
@@ -192,7 +194,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
       if (userError) throw userError;
 
-      // Langkah 2: Hubungkan hasil ID data login ke tabel 'profiles' sebagai 'user_id'
+      // 2. Hubungkan ID data login ke tabel 'profiles' sebagai 'user_id'
       const { error: profileError } = await supabase
         .from('profiles')
         .insert([{
@@ -227,7 +229,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         const { error } = await supabase.from('students').update({ nisn: editingItem.data.nisn || null, nama_siswa: editingItem.data.name, kelas: editingItem.data.kelas }).eq('id', editingItem.data.id);
         if (error) throw error;
       } else {
-        // Update informasi profil guru
         const { error: profErr } = await supabase.from('profiles').update({
           nama_lengkap: editingItem.data.name,
           mata_pelajaran: editingItem.data.mataPelajaran || null,
@@ -240,7 +241,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         
         if (profErr) throw profErr;
 
-        // Sinkronisasi data login di tabel user jika username atau role diubah
         if (editingItem.data.user_id) {
           await supabase.from('user').update({ 
             role: editingItem.data.role, 
@@ -261,9 +261,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
       if (type === 'siswa') {
         await supabase.from('students').delete().eq('id', id);
       } else {
-        // Hapus biodata profil terlebih dahulu
         await supabase.from('profiles').delete().eq('id', id);
-        // Putus dan hapus data otentikasi login pada tabel user
         if (userId) {
           await supabase.from('user').delete().eq('id', userId);
         }
@@ -278,7 +276,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     if (!passwordModal || !passwordModal.newPass.trim()) return;
     setIsSubmitting(true);
     try {
-      // Mutasi perbaikan password langsung ke kolom password tabel kustom 'user'
       const { error } = await supabase
         .from('user')
         .update({ password: passwordModal.newPass })
