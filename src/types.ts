@@ -1,6 +1,12 @@
-export type RoleType = 'admin' | 'guru' | 'guru_bk'; // Ditambahkan 'guru_bk' agar aman saat pemetaan state
+export type RoleType = 'admin' | 'guru' | 'guru_bk' | 'guru_mapel';
 
-export type SubRoleType = 'wali_kelas' | 'pembina_ekskul' | 'guru_piket' | 'guru_bk' | 'guru_mapel' | 'pks_kesiswaan';
+export type SubRoleType = 'guru_mapel' | 'wali_kelas' | 'guru_piket' | 'pembina_ekskul' | 'guru_bk';
+
+export interface User {
+  id: string;
+  name: string;
+  role: RoleType;
+}
 
 export interface Guru {
   id: string;
@@ -11,7 +17,6 @@ export interface Guru {
   kelasWali: string | null;
   namaEkskul: string | null;
   piketDays: string[];
-  email?: string;
 }
 
 export interface Siswa {
@@ -19,8 +24,7 @@ export interface Siswa {
   nisn: string;
   name: string;
   kelas: string;
-  statusAbsen: 'Hadir' | 'Sakit' | 'Izin' | 'Alfa';
-  catatanAbsen?: string;
+  statusAbsen: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa';
   ekskul: string | null;
 }
 
@@ -29,17 +33,12 @@ export interface JurnalMengajar {
   guruId: string;
   guruName: string;
   tanggal: string;
-  hari: string;
+  hari?: string;
   kelas: string;
   jamKe: string;
   materi: string;
   aktivitas: string;
-  absensiSiswa: {
-    siswaId: string;
-    namaSiswa: string;
-    status: 'Sakit' | 'Izin' | 'Alfa';
-    catatan?: string;
-  }[];
+  absensiSiswa?: any[];
 }
 
 export interface KasusBK {
@@ -48,11 +47,10 @@ export interface KasusBK {
   namaSiswa: string;
   kelas: string;
   tanggal: string;
-  tipeKasus: 'Kerawanan' | 'Pelanggaran' | 'Bimbingan';
+  tipeKasus: 'Pelanggaran' | 'Prestasi' | 'Konseling';
   deskripsi: string;
   solusi: string;
   penangananOleh: string;
-  tindakLanjut?: { tanggal: string; perkembangan: string; petugas: string; }[];
 }
 
 export interface NilaiEkskul {
@@ -61,6 +59,62 @@ export interface NilaiEkskul {
   namaSiswa: string;
   kelas: string;
   namaEkskul: string;
-  predikat: 'A' | 'B' | 'C';
+  predikat: 'A' | 'B' | 'C' | 'D';
   catatan: string;
+}
+
+// FIX: Menambahkan Type & Interface yang hilang dan dicari oleh src/data.ts
+export interface JurnalPiketHarian {
+  id: string;
+  guruId: string;
+  guruName: string;
+  tanggal: string;
+  hari: string;
+  catatanKejadian: string;
+  jumlahSiswaTerlambat: number;
+  statusKbm: string;
+}
+
+export interface PiketScheduleConfig {
+  id: string;
+  guruId: string;
+  guruName: string;
+  hari: string;
+}
+
+export interface JurnalEkskul {
+  id: string;
+  namaEkskul: string;
+  pembinaName: string;
+  tanggal: string;
+  aktivitasLatihan: string;
+  jumlahHadir: number;
+}
+
+export interface AturanPoin {
+  id: string;
+  kategori: 'Ringan' | 'Sedang' | 'Berat' | 'Sangat Berat';
+  jenisKasus: string;
+  bobotPoin: number;
+}
+
+export interface LogPoinSiswa {
+  id: string;
+  siswaId: string;
+  namaSiswa: string;
+  kelas: string;
+  tanggal: string;
+  kasusId: string;
+  namaKasus: string;
+  poinMasuk: number;
+}
+
+export interface IzinGuru {
+  id: string;
+  guruId: string;
+  guruName: string;
+  tanggal: string;
+  alasanIzin: string;
+  tugasDiberikan: string;
+  statusPersetujuan: 'Pending' | 'Disetujui' | 'Ditolak';
 }
