@@ -10,24 +10,48 @@ import ExportPanel from './ExportPanel';
 import { BookOpen, UserCheck, Award, HeartHandshake, FileText, LayoutDashboard } from 'lucide-react';
 
 const MainDashboard: React.FC = () => {
-  const { currentUser, gurus, siswa, jurnalMengajar, kasusBK, nilaiEkskul } = useApp();
+  const { currentUser, gurus = [], siswa = [], jurnalMengajar = [], kasusBK = [], nilaiEkskul = [] } = useApp();
   const [guruView, setGuruView] = useState<string>('home');
   const [activeTab, setActiveTab] = useState('overview');
 
   if (!currentUser) return null;
 
-  const currentGuruProfile = gurus.find(g => String(g.id) === String(currentUser.id) || g.name === currentUser.name);
+  // 1. Proteksi Super Aman pada pencarian profil guru (Mencegah crash toLowerCase)
+  const currentGuruProfile = useMemo(() => {
+    return gurus.find(g => {
+      if (!g) return false;
+      const matchId = String(g.id) === String(currentUser.id);
+      
+      const currentUserNameLower = currentUser.name ? String(currentUser.name).toLowerCase().trim() : "";
+      const guruNameLower = g.name ? String(g.name).toLowerCase().trim() : "";
+      const matchName = guruNameLower !== "" && guruNameLower === currentUserNameLower;
+      
+      return matchId || matchName;
+    });
+  }, [gurus, currentUser]);
 
+  // 2. Proteksi Super Aman pada pemfilteran Jurnal Mengajar
   const myJurnal = useMemo(() => {
-    return jurnalMengajar.filter(j => String(j.guruId) === String(currentUser.id));
-  }, [jurnalMengajar, currentUser.id]);
+    if (!currentUser) return [];
+    return jurnalMengajar.filter(j => {
+      if (!j) return false;
+      const matchId = String(j.guruId).trim() === String(currentUser.id).trim();
+      const matchProfileId = currentGuruProfile ? String(j.guruId).trim() === String(currentGuruProfile.id).trim() : false;
+      
+      return matchId || matchProfileId;
+    });
+  }, [jurnalMengajar, currentUser, currentGuruProfile]);
 
+  // 3. Proteksi Super Aman pada data Wali Kelas
   const mySiswaWali = useMemo(() => {
-    return currentGuruProfile?.kelasWali ? siswa.filter(s => s.kelas === currentGuruProfile.kelasWali) : [];
+    if (!currentGuruProfile?.kelasWali) return [];
+    return siswa.filter(s => s && s.kelas === currentGuruProfile.kelasWali);
   }, [siswa, currentGuruProfile]);
 
+  // 4. Proteksi Super Aman pada data Ekskul
   const myEkskulData = useMemo(() => {
-    return currentGuruProfile?.namaEkskul ? nilaiEkskul.filter(n => n.namaEkskul === currentGuruProfile.namaEkskul) : [];
+    if (!currentGuruProfile?.namaEkskul) return [];
+    return nilaiEkskul.filter(n => n && n.namaEkskul === currentGuruProfile.namaEkskul);
   }, [nilaiEkskul, currentGuruProfile]);
 
   return (
@@ -51,12 +75,13 @@ const MainDashboard: React.FC = () => {
         </div>
       )}
 
-      {(currentUser.role === 'guru' || currentUser.role === 'guru_bk') && (
+      {/* FIX: Ditambahkan kondisi || currentUser.role === 'guru_mapel' */}
+      {(currentUser.role === 'guru' || currentUser.role === 'guru_bk' || currentUser.role === 'guru_mapel') && (
         <div className="space-y-6">
           {guruView === 'home' && (
             <div className="space-y-6">
               <div className="bg-gradient-to-r from-sky-600 to-indigo-600 p-6 rounded-2xl text-white shadow-md">
-                <h2 className="text-xl font-bold">Selamat Datang, {currentUser.name}!</h2>
+                <h2 className="text-xl font-bold">Selamat Datang, {currentUser.name || 'Guru'}!</h2>
                 <p className="text-sky-100 text-xs mt-1">Silakan pilih menu ruang lingkup kerja aktif Anda.</p>
               </div>
 
@@ -68,8 +93,7 @@ const MainDashboard: React.FC = () => {
                   <div><h4 className="text-sm font-bold text-slate-800">Guru Mata Pelajaran</h4><p className="text-xs text-slate-400 mt-1">Input Jurnal Kelas harian & Riwayat Mengajar.</p></div>
                 </button>
 
-                {/* PERBAIKAN: Ditambahkan ?. setelah subRoles agar tidak crash jika profile kosong */}
-                {currentGuruProfile?.subRoles?.includes('wali_kelas') && (
+                {currentGuruProfile?.kelasWali && (
                   <button onClick={() => setGuruView('walikelas')} className="bg-white p-5 border border-slate-200 rounded-2xl text-left hover:border-indigo-500 hover:ring-4 hover:ring-indigo-50 transition flex items-start gap-4 cursor-pointer group">
                     <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition"><UserCheck className="w-5 h-5" /></div>
                     <div><h4 className="text-sm font-bold text-slate-800">Wali Kelas ({currentGuruProfile.kelasWali})</h4><p className="text-xs text-slate-400 mt-1">Rekap absensi harian dan peninjauan kasus BK siswa.</p></div>

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabaseClient';
-import { Shield, Lock, User, AlertCircle } from 'lucide-react';
+import { Shield, Lock, User, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 const RoleGate: React.FC = () => {
   const { setCurrentUser } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // State untuk kontrol intip password
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -52,41 +53,73 @@ const RoleGate: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-xl p-8">
-        <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-12 h-12 bg-gradient-to-tr from-sky-600 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-sky-100 mb-3">
+      <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-6">
+        
+        {/* Logo & Judul Sistem */}
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
             <Shield className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-950">Selamat Datang di SIDIAG</h2>
-          <p className="text-sm text-slate-500 mt-1">Sistem Digital Jurnal & Agenda Sekolah.</p>
+          <h1 className="text-xl font-black text-slate-800 tracking-tight">SIGAP Dashboard</h1>
+          <p className="text-xs text-slate-400">Sistem Informasi Penilaian Guru & Absensi Siswa</p>
         </div>
 
+        {/* Notifikasi Pesan Eror */}
         {errorMsg && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-red-700 text-sm">
-            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div className="bg-rose-50 border border-rose-100 p-3.5 rounded-2xl flex items-start gap-3 text-rose-700 text-xs font-semibold animate-shake">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Username / NIP</label>
+        {/* Form Input Login */}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-600">Username</label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none"><User className="w-4 h-4" /></span>
-              <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Masukkan username Anda..." className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-50" />
+              <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Masukkan username Anda..."
+                className="w-full text-xs pl-10 pr-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-50 transition"
+                disabled={isSubmitting}
+              />
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Password</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-600">Password Akun</label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none"><Lock className="w-4 h-4" /></span>
-              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-50" />
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type={showPassword ? 'text' : 'password'} // Tipe dinamis berdasarkan state
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Masukkan password Anda..."
+                className="w-full text-xs pl-10 pr-11 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-50 transition"
+                disabled={isSubmitting}
+              />
+              {/* Tombol Interaktif Intip Password */}
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer p-0.5 rounded transition"
+                title={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                disabled={isSubmitting}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
-          <button type="submit" disabled={isSubmitting} className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 px-4 rounded-xl shadow-md active:scale-[0.98] transition disabled:opacity-50 cursor-pointer text-sm flex items-center justify-center gap-2">
-            {isSubmitting ? 'Memverifikasi...' : 'Masuk Aplikasi'}
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 px-4 rounded-2xl text-xs transition duration-200 shadow-sm disabled:opacity-50 flex items-center justify-center cursor-pointer mt-2"
+          >
+            {isSubmitting ? 'Memproses Verifikasi...' : 'Masuk ke Sistem'}
           </button>
         </form>
       </div>

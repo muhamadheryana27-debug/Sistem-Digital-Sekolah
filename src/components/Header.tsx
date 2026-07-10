@@ -32,10 +32,10 @@ const Header: React.FC = () => {
           </div>
           <div>
             <h1 className="text-base font-bold text-slate-900 tracking-tight leading-none">
-              SIDIAG
+              SIGAP-SPENSAWA
             </h1>
             <p className="text-[10px] text-slate-400 font-medium mt-1">
-              Sistem Digital Jurnal & Agenda Sekolah
+              Sistem Digital Administrasi Pembelajaran SMP NEGERI 1 WANAYASA
             </p>
           </div>
         </div>

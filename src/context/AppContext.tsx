@@ -30,7 +30,7 @@ interface AppContextType {
   isLoading: boolean;
 
   // Actions
-  addJurnalMengajar: (jurnal: Omit<JurnalMengajar, "id">) => Promise<void>;
+  addJurnalMengajar: (jurnal: Omit<JurnalMengajar, "id">, absensi?: any[]) => Promise<void>;
   addKasusBK: (kasus: Omit<KasusBK, "id">) => Promise<void>;
   addNilaiEkskul: (nilai: Omit<NilaiEkskul, "id">) => Promise<void>;
   addMasterPelanggaran: (
@@ -41,6 +41,9 @@ interface AppContextType {
   bulkInsertPelanggaran: (
     list: Omit<MasterPelanggaran, "id">[],
   ) => Promise<void>;
+  
+  // Aksi penanganan nilai akademik mata pelajaran siswa
+  updateNilaiSiswa: (siswaId: string, mapel: string, dataNilai: any) => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -78,26 +81,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
           supabase.from("profiles").select("*"),
           supabase.from("students").select("*"),
           supabase.from("teaching_journals").select("*"),
-          supabase.from("bk_records").select("*"),
-          supabase.from("extracurricular_scores").select("*"),
+          supabase.from("bk_records").select("*"), 
+          supabase.from("extracurricular_scores").select("*"), 
           supabase.from("master_pelanggarans").select("*"),
         ]);
 
         if (resProfiles)
           setGurus(
             resProfiles.map((p) => {
+              // Menentukan sub-roles secara dinamis dan presisi berdasarkan database
               const sRoles: SubRoleType[] = ["guru_mapel"];
-              if (p.is_wali_kelas) sRoles.push("wali_kelas");
+              
+              if (p.is_wali_kelas || p.kelas_wali) sRoles.push("wali_kelas");
               if (p.is_guru_piket) sRoles.push("guru_piket");
               if (p.nama_ekstrakurikuler) sRoles.push("pembina_ekskul");
-              if (p.nama_lengkap?.toLowerCase().includes("bk"))
+              if (p.nama_lengkap?.toLowerCase().includes("bk") || p.role === "guru_bk")
                 sRoles.push("guru_bk");
 
+              // FIX DETEKSI ROLE UTAMANYA: Jika di database bukan admin, dia adalah cluster role "guru"
+              const determinedRole = p.role === "admin" ? "admin" : (p.role === "guru_bk" ? "guru_bk" : "guru");
+
               return {
-                id: String(p.id),
+                id: p.user_id ? String(p.user_id) : String(p.id), 
                 nip: p.user_id ? String(p.user_id) : "",
                 name: p.nama_lengkap || "",
-                role: p.is_wali_kelas ? "guru" : "admin",
+                role: determinedRole, 
                 subRoles: sRoles,
                 kelasWali: p.kelas_wali || null,
                 namaEkskul: p.nama_ekstrakurikuler || null,
@@ -117,51 +125,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               ekskul: s.kelas_wali || null,
             })),
           );
-        // Tambahkan ke AppContext.tsx
-        const addJurnalLengkap = async (
-          jurnal: Omit<JurnalMengajar, "id">,
-          absensi: any[],
-        ) => {
-          // 1. Simpan Jurnal Utama
-          const { data: jurnalData, error: jurnalError } = await supabase
-            .from("teaching_journals")
-            .insert([
-              {
-                user_id: Number(jurnal.guruId),
-                kelas: jurnal.kelas,
-                mata_pelajaran: jurnal.guruName,
-                jam_ke: jurnal.jamKe,
-                materi_pembelajaran: jurnal.materi,
-                catatan_kelas: jurnal.aktivitas,
-              },
-            ])
-            .select()
-            .single();
 
-          if (jurnalError) throw jurnalError;
-
-          // 2. Simpan Absensi (Relasi ke jurnalData.id)
-          const absensiPayload = absensi.map((a) => ({
-            journal_id: jurnalData.id,
-            student_id: a.siswaId,
-            status: a.status,
-          }));
-
-          const { error: absensiError } = await supabase
-            .from("student_attendance")
-            .insert(absensiPayload);
-          if (absensiError) throw absensiError;
-        };
-
-        // ==========================================
-        // SINKRONISASI COCOK DENGAN DUA KOLOM MAPEL & MATERI
-        // ==========================================
         if (resJournals)
           setJurnalMengajar(
             resJournals.map((j) => ({
               id: String(j.id),
               guruId: String(j.user_id || ""),
-              guruName: j.mata_pelajaran || "", // Kita simpan nama mata pelajaran di properti guruName pembantu
+              guruName: j.mata_ajaran || j.mata_pelajaran || "", 
               tanggal:
                 j.tanggal ||
                 j.created_at?.split("T")[0] ||
@@ -169,34 +139,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               hari: "",
               kelas: j.kelas || "",
               jamKe: j.jam_ke || "",
-              materi: j.materi_pembelajaran || "", // Mengambil materi pokok asli
-              aktivitas: j.catatan_kelas || "", // Mengambil catatan kelas asli
+              materi: j.materi_pembelajaran || "", 
+              aktivitas: j.catatan_kelas || "", 
               absensiSiswa: [],
             })),
           );
 
         if (resBkRecords)
           setKasusBK(
-            resBkRecords.map((k) => ({
+            resBkRecords.map((k: any) => ({
               id: String(k.id),
               siswaId: String(k.student_id || ""),
-              namaSiswa: String(k.student_id || ""),
-              kelas: k.kelas || "",
+              namaSiswa: k.students?.nama_siswa || `Siswa ID ${k.student_id}`,
+              kelas: k.students?.kelas || k.kelas || "",
               tanggal: k.created_at ? k.created_at.split("T")[0] : "",
-              tipeKasus: (k.kategori_kasus as any) || "Ringan",
+              tipeKasus: (k.kategori_kasus as any) || "Pelanggaran",
               deskripsi: k.detail_kasus || "",
               solusi: k.tindakan_penanganan || "",
-              penangananOleh: "",
+              penangananOleh: "Guru BK",
             })),
           );
 
         if (resEkskulScores)
           setNilaiEkskul(
-            resEkskulScores.map((n) => ({
+            resEkskulScores.map((n: any) => ({
               id: String(n.id),
               siswaId: String(n.student_id || ""),
-              namaSiswa: "",
-              kelas: "",
+              namaSiswa: n.students?.nama_siswa || "",
+              kelas: n.students?.kelas || "",
               namaEkskul: n.nama_ekskul || "",
               predikat: (n.nilai_kualitatif as any) || "B",
               catatan: n.catatan_pembinaan || "",
@@ -222,26 +192,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     fetchSupabaseData();
   }, []);
 
-  const addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">) => {
-    const { data, error } = await supabase
+  const addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi: any[] = []) => {
+    const { data: jurnalData, error: jurnalError } = await supabase
       .from("teaching_journals")
       .insert([
         {
           user_id: Number(jurnal.guruId) || null,
           kelas: jurnal.kelas,
-          mata_pelajaran: jurnal.guruName, // Kolom mata_pelajaran database
+          mata_pelajaran: jurnal.guruName, 
           jam_ke: jurnal.jamKe,
-          materi_pembelajaran: jurnal.materi, // Kolom materi_pelajaran database
-          catatan_kelas: jurnal.aktivitas, // Kolom catatan_kelas database
+          materi_pembelajaran: jurnal.materi, 
+          catatan_kelas: jurnal.aktivitas, 
         },
       ])
       .select()
       .single();
-    if (error) throw new Error(error.message);
-    setJurnalMengajar((prev) => [...prev, { ...jurnal, id: String(data.id) }]);
+
+    if (jurnalError) throw new Error(jurnalError.message);
+
+    if (absensi && absensi.length > 0) {
+      const absensiPayload = absensi.map((a) => ({
+        journal_id: jurnalData.id,
+        student_id: Number(a.siswaId),
+        status: a.status,
+      }));
+
+      const { error: absensiError } = await supabase
+        .from("student_attendance")
+        .insert(absensiPayload);
+      if (absensiError) throw new Error(absensiError.message);
+    }
+
+    setJurnalMengajar((prev) => [
+      ...prev, 
+      { 
+        ...jurnal, 
+        id: String(jurnalData.id),
+        absensiSiswa: absensi 
+      }
+    ]);
   };
 
-  // ... (Aksi Bulk Insert dan BK lainnya tetap sama)
   const addKasusBK = async (kasus: Omit<KasusBK, "id">) => {
     const { data, error } = await supabase
       .from("bk_records")
@@ -258,7 +249,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       .select()
       .single();
     if (error) throw new Error(error.message);
-    setKasusBK((prev) => [...prev, { ...kasus, id: String(data.id) }]);
+    
+    const targetSiswa = siswa.find((s) => s.id === kasus.siswaId);
+    setKasusBK((prev) => [
+      ...prev, 
+      { 
+        ...kasus, 
+        id: String(data.id),
+        namaSiswa: targetSiswa ? targetSiswa.name : kasus.namaSiswa 
+      }
+    ]);
   };
 
   const addNilaiEkskul = async (nilai: Omit<NilaiEkskul, "id">) => {
@@ -275,7 +275,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       .select()
       .single();
     if (error) throw new Error(error.message);
-    setNilaiEkskul((prev) => [...prev, { ...nilai, id: String(data.id) }]);
+
+    const targetSiswa = siswa.find((s) => s.id === nilai.siswaId);
+    setNilaiEkskul((prev) => [
+      ...prev, 
+      { 
+        ...nilai, 
+        id: String(data.id),
+        namaSiswa: targetSiswa ? targetSiswa.name : nilai.namaSiswa,
+        kelas: targetSiswa ? targetSiswa.kelas : nilai.kelas 
+      }
+    ]);
   };
 
   const addMasterPelanggaran = async (
@@ -335,6 +345,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     if (error) throw new Error(error.message);
   };
 
+  const updateNilaiSiswa = async (siswaId: string, mapel: string, dataNilai: any) => {
+    try {
+      const payload = {
+        siswa_id: siswaId,
+        mata_pelajaran: mapel,
+        harian: dataNilai.harian || '0',
+        tugas: dataNilai.tugas || '0',
+        uts: dataNilai.uts || '0',
+        uas: dataNilai.uas || '0',
+        psat: dataNilai.psat || '0',
+        psaj: dataNilai.psaj || '0',
+      };
+
+      const { error } = await supabase
+        .from("nilai_mapel")
+        .upsert(payload, { onConflict: "siswa_id,mata_pelajaran" });
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error("Gagal memperbarui nilai mata pelajaran:", error);
+      return false;
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -354,6 +389,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         bulkInsertSiswa,
         bulkInsertGurus,
         bulkInsertPelanggaran,
+        updateNilaiSiswa,
       }}
     >
       {children}
