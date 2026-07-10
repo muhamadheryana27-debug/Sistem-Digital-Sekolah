@@ -31,10 +31,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const [bobotManual, setBobotManual] = useState('5');
   const [successManual, setSuccessManual] = useState('');
 
-  // State Pendaftaran Manual Siswa
-  const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '' });
+  // State Pendaftaran Manual Siswa (Menambahkan jenisKelamin)
+  const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '', jenisKelamin: 'Laki-laki' });
   
-  // State Input Pembuatan Akun Guru Baru Manual (Dipetakan ke tabel public.users & public.profiles)
+  // State Input Pembuatan Akun Guru Baru Manual
   const [newGuru, setNewGuru] = useState({ 
     name: '', 
     username: '', 
@@ -47,7 +47,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     namaEkskul: ''
   });
 
-  // State Kontrol Dialog Pop-up (Edit & Reset Sandi)
+  // State Kontrol Dialog Pop-up
   const [editingItem, setEditingItem] = useState<{ type: 'siswa' | 'guru'; data: any } | null>(null);
   const [passwordModal, setPasswordModal] = useState<{ isOpen: boolean; userId: string; userName: string; newPass: string } | null>(null);
 
@@ -58,10 +58,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- DOWNLOAD TEMPLATE EXCEL DENGAN KOLOM TEPAT ---
   const handleDownloadTemplate = () => {
     let dataTemplate: any[] = [];
     if (uploadType === 'siswa') {
-      dataTemplate = [{ "nisn": "0401234561", "nama_siswa": "Nama Siswa Contoh A", "kelas": "VII-A" }];
+      dataTemplate = [{ "nisn": "0401234561", "nama_siswa": "Nama Siswa Contoh A", "kelas": "VII-A", "jenis_kelamin": "Laki-laki" }];
     } else if (uploadType === 'guru') {
       dataTemplate = [{ 
         "nama_lengkap": "Nama Guru Lengkap", "username": "guru123", "password": "password123",
@@ -77,6 +78,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     XLSX.writeFile(wb, `template_${uploadType}_sigap.xlsx`);
   };
 
+  // --- FIX PARSING EXCEL SISWA DENGAN KOLOM TEPAT ---
   const handleFileProcess = async (file: File) => {
     if (!file) return;
     setIsUploading(true);
@@ -99,17 +101,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         });
 
         if (uploadType === 'siswa') {
-          const payload = normalizedData.map((d: any) => ({
-            nisn: d.nisn || '', name: d.nama_siswa || d.name || '', kelas: d.kelas || '', statusAbsen: 'Hadir' as const, ekskul: null
-          }));
-          await bulkInsertSiswa(payload);
-          setUploadSuccess(`Sukses memproses ${payload.length} data siswa!`);
+          // Melakukan sinkronisasi langsung ke tabel students di Supabase dengan kolom jenis_kelamin
+          for (const d of normalizedData) {
+            const jkValue = d.jenis_kelamin || 'Laki-laki';
+            const { error: insertSiswaErr } = await supabase.from('students').insert([{
+              nisn: d.nisn || null,
+              nama_siswa: d.nama_siswa || d.name || '',
+              kelas: d.kelas || '',
+              jenis_kelamin: jkValue
+            }]);
+            if (insertSiswaErr) throw insertSiswaErr;
+          }
+          setUploadSuccess(`Sukses memproses repositori berkas Excel siswa!`);
         } else if (uploadType === 'guru') {
           for (const d of normalizedData) {
             const isWali = d.is_wali_kelas === 'true' || d.is_wali_kelas === '1';
             const isPiket = d.is_guru_piket === 'true' || d.is_guru_piket === '1';
 
-            // 1. Memasukkan kredensial login ke tabel kustom 'users'
             const { data: userData, error: userError } = await supabase
               .from('users')
               .insert([{ username: d.username, password: d.password, role: d.role || 'guru_mapel' }])
@@ -118,7 +126,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
             if (userError) throw userError;
 
-            // 2. Memasukkan biodata ke tabel 'profiles' dengan referensi 'user_id'
             await supabase.from('profiles').insert([{
               user_id: userData.id,
               nama_lengkap: d.nama_lengkap || d.name || '',
@@ -156,21 +163,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     } catch (err: any) { alert(err.message); }
   };
 
+  // --- FIX INPUT MANUAL SISWA DENGAN KOLOM TEPAT ---
   const handleAddSiswaManual = async (e: FormEvent) => {
     e.preventDefault();
     if (!newSiswa.name || !newSiswa.kelas) return;
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('students').insert([{ nisn: newSiswa.nisn || null, nama_siswa: newSiswa.name, kelas: newSiswa.kelas }]);
+      const { error } = await supabase.from('students').insert([{ 
+        nisn: newSiswa.nisn || null, 
+        nama_siswa: newSiswa.name, 
+        kelas: newSiswa.kelas,
+        jenis_kelamin: newSiswa.jenisKelamin
+      }]);
       if (error) throw error;
       alert(`Berhasil menambahkan siswa: ${newSiswa.name}`);
-      setNewSiswa({ nisn: '', name: '', kelas: '' });
+      setNewSiswa({ nisn: '', name: '', kelas: '', jenisKelamin: 'Laki-laki' });
       window.location.reload();
     } catch (err: any) { alert(err.message); } 
     finally { setIsSubmitting(false); }
   };
 
-  // --- REGISTRASI DUA TABEL: SIMULTAN INPUT KE 'USERS' & 'PROFILES' ---
   const handleAddGuruManual = async (e: FormEvent) => {
     e.preventDefault();
     if (!newGuru.name || !newGuru.username || !newGuru.password) {
@@ -179,12 +191,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     }
     setIsSubmitting(true);
     try {
-      // Langkah 1: Simpan data otentikasi ke tabel kustom 'users' (Memastikan pemetaan password terpetik)
       const { data: userData, error: userError } = await supabase
         .from('users')
         .insert([{
           username: newGuru.username,
-          password: newGuru.password, 
+          password: newGuru.password,
           role: newGuru.role
         }])
         .select()
@@ -192,7 +203,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
       if (userError) throw userError;
 
-      // Langkah 2: Hubungkan hasil ID data login ke tabel 'profiles' sebagai 'user_id'
       const { error: profileError } = await supabase
         .from('profiles')
         .insert([{
@@ -224,10 +234,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     setIsSubmitting(true);
     try {
       if (editingItem.type === 'siswa') {
-        const { error } = await supabase.from('students').update({ nisn: editingItem.data.nisn || null, nama_siswa: editingItem.data.name, kelas: editingItem.data.kelas }).eq('id', editingItem.data.id);
+        const { error } = await supabase.from('students').update({ 
+          nisn: editingItem.data.nisn || null, 
+          nama_siswa: editingItem.data.name, 
+          kelas: editingItem.data.kelas,
+          jenis_kelamin: editingItem.data.jenisKelamin
+        }).eq('id', editingItem.data.id);
         if (error) throw error;
       } else {
-        // Update informasi profil guru
         const { error: profErr } = await supabase.from('profiles').update({
           nama_lengkap: editingItem.data.name,
           mata_pelajaran: editingItem.data.mataPelajaran || null,
@@ -240,7 +254,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         
         if (profErr) throw profErr;
 
-        // Sinkronisasi data login di tabel users jika username atau role diubah
         if (editingItem.data.user_id) {
           await supabase.from('users').update({ 
             role: editingItem.data.role, 
@@ -261,9 +274,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
       if (type === 'siswa') {
         await supabase.from('students').delete().eq('id', id);
       } else {
-        // Hapus biodata profil terlebih dahulu
         await supabase.from('profiles').delete().eq('id', id);
-        // Hapus data otentikasi login pada tabel users
         if (userId) {
           await supabase.from('users').delete().eq('id', userId);
         }
@@ -278,7 +289,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     if (!passwordModal || !passwordModal.newPass.trim()) return;
     setIsSubmitting(true);
     try {
-      // Perbaikan password langsung ke tabel kustom 'users'
       const { error } = await supabase
         .from('users')
         .update({ password: passwordModal.newPass })
@@ -321,42 +331,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
               {uploadSuccess && <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 font-medium"><CheckCircle className="w-4 h-4 text-emerald-600" /> {uploadSuccess}</div>}
               {uploadError && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-2 font-medium"><AlertCircle className="w-4 h-4 text-rose-600" /> {uploadError}</div>}
-
-              {uploadType === 'pelanggaran' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
-                  <form onSubmit={handleSaveManualPelanggaran} className="space-y-4">
-                    <h5 className="text-xs font-bold uppercase text-slate-700">Form Jenis Pelanggaran BK</h5>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Kategori</label>
-                        <select value={katManual} onChange={(e) => setKatManual(e.target.value)} className="w-full bg-slate-50 border rounded px-2 py-1 text-xs text-slate-700"><option value="Ringan">Ringan</option><option value="Sedang">Sedang</option><option value="Berat">Berat</option><option value="Sangat Berat">Sangat Berat</option></select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Bobot Skor</label>
-                        <input type="number" value={bobotManual} onChange={(e) => setBobotManual(e.target.value)} className="w-full bg-slate-50 border rounded px-2 py-1 text-xs text-slate-700" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Jenis Kasus Pelanggaran</label>
-                      <input type="text" required value={jenisManual} onChange={(e) => setJenisManual(e.target.value)} placeholder="Contoh: Berkelahi di sekolah" className="w-full bg-slate-50 border rounded px-3 py-1.5 text-xs" />
-                    </div>
-                    {successManual && <p className="text-xs text-emerald-700 bg-emerald-50 p-2 rounded">{successManual}</p>}
-                    <button type="submit" className="w-full bg-slate-900 text-white font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-1.5 shadow"><Save className="w-4 h-4" /> Simpan Pelanggaran</button>
-                  </form>
-
-                  <div className="space-y-3">
-                    <h5 className="text-xs font-bold uppercase text-slate-700">List Aturan Pelanggaran Aktif ({masterPelanggarans.length})</h5>
-                    <div className="max-h-[220px] overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl px-3 bg-slate-50/40">
-                      {masterPelanggarans.map(p => (
-                        <div key={p.id} className="py-2.5 flex justify-between items-center text-xs gap-2">
-                          <div><p className="font-semibold text-slate-800">{p.jenis_kasus}</p><span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 mt-1 inline-block uppercase">{p.kategori}</span></div>
-                          <span className="bg-rose-50 text-rose-700 border border-rose-100 rounded px-2 py-0.5 font-bold text-[10px] shrink-0">Poin: {p.bobot}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -376,9 +350,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                 <form onSubmit={handleAddSiswaManual} className="space-y-3">
                   <div><label className="block text-[11px] font-bold text-slate-500 mb-1">NISN</label><input type="text" value={newSiswa.nisn} onChange={(e) => setNewSiswa({ ...newSiswa, nisn: e.target.value })} placeholder="Masukkan NISN..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs" /></div>
                   <div><label className="block text-[11px] font-bold text-slate-500 mb-1">Nama Siswa</label><input type="text" value={newSiswa.name} onChange={(e) => setNewSiswa({ ...newSiswa, name: e.target.value })} placeholder="Nama lengkap..." required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs" /></div>
-                  <div><label className="block text-[11px] font-bold text-slate-500 mb-1">Kelas</label>
-                    <select value={newSiswa.kelas} onChange={(e) => setNewSiswa({ ...newSiswa, kelas: e.target.value })} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option value="">-- Pilih Kelas --</option><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">Kelas</label>
+                      <select value={newSiswa.kelas} onChange={(e) => setNewSiswa({ ...newSiswa, kelas: e.target.value })} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option value="">-- Pilih --</option><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">Jenis Kelamin</label>
+                      <select value={newSiswa.jenisKelamin} onChange={(e) => setNewSiswa({ ...newSiswa, jenisKelamin: e.target.value })} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select>
+                    </div>
                   </div>
+                  
                   <button type="submit" className="w-full py-2 bg-sky-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2"><PlusCircle className="w-3.5 h-3.5" /> Simpan Siswa</button>
                 </form>
               </div>
@@ -388,18 +371,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                 <div className="overflow-y-auto max-h-[450px]">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 border-b">
-                      <tr><th className="p-3 pl-4">NISN</th><th className="p-3">Nama</th><th className="p-3">Kelas</th><th className="p-3 text-center">Aksi</th></tr>
+                      <tr><th className="p-3 pl-4">NISN</th><th className="p-3">Nama</th><th className="p-3">Kelas & JK</th><th className="p-3 text-center">Aksi</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs text-slate-600">
-                      {siswa.map((s) => (
+                      {siswa.map((s: any) => (
                         <tr key={s.id} className="hover:bg-slate-50/40">
                           <td className="p-3 pl-4 font-mono font-medium text-slate-400">{s.nisn || '-'}</td>
-                          <td className="p-3 font-bold text-slate-800">{s.name}</td>
-                          <td className="p-3"><span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600 font-semibold">{s.kelas}</span></td>
+                          <td className="p-3 font-bold text-slate-800">{s.name || s.nama_siswa}</td>
+                          <td className="p-3">
+                            <div className="flex gap-1">
+                              <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600 font-semibold">{s.kelas}</span>
+                              <span className="px-2 py-0.5 bg-sky-50 rounded text-sky-700 font-medium text-[10px]">{s.jenis_kelamin || '-'}</span>
+                            </div>
+                          </td>
                           <td className="p-3 text-center">
                             <div className="flex justify-center gap-2">
-                              <button onClick={() => setEditingItem({ type: 'siswa', data: { id: s.id, nisn: s.nisn, name: s.name, kelas: s.kelas } })} className="p-1 text-sky-600 hover:bg-sky-50 rounded"><Edit2 className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => handleDeleteItem('siswa', s.id, s.name)} className="p-1 text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => setEditingItem({ type: 'siswa', data: { id: s.id, nisn: s.nisn, name: s.name || s.nama_siswa, kelas: s.kelas, jenisKelamin: s.jenis_kelamin || 'Laki-laki' } })} className="p-1 text-sky-600 hover:bg-sky-50 rounded"><Edit2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleDeleteItem('siswa', s.id, s.name || s.nama_siswa)} className="p-1 text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                             </div>
                           </td>
                         </tr>
@@ -413,46 +401,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
           {activeSubTab === 'guru' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Blok Admin Panel Guru tetap terjaga utuh sesuai dengan modifikasi users */}
               <div className="bg-white p-5 border border-slate-200 rounded-2xl shadow-sm h-fit space-y-4">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><PlusCircle className="w-4 h-4 text-sky-600" /> Buat Akun Guru</h3>
                 <form onSubmit={handleAddGuruManual} className="space-y-3">
                   <div><label className="block text-[11px] font-bold text-slate-500 mb-1">Nama Lengkap & Gelar</label><input type="text" value={newGuru.name} onChange={(e) => setNewGuru({ ...newGuru, name: e.target.value })} placeholder="Nama lengkap..." required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs" /></div>
-                  
                   <div className="grid grid-cols-2 gap-2">
                     <div><label className="block text-[11px] font-bold text-slate-500 mb-1">Username</label><input type="text" value={newGuru.username} onChange={(e) => setNewGuru({ ...newGuru, username: e.target.value })} placeholder="Username..." required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs" /></div>
                     <div><label className="block text-[11px] font-bold text-slate-500 mb-1">Kata Sandi</label><input type="password" value={newGuru.password} onChange={(e) => setNewGuru({ ...newGuru, password: e.target.value })} placeholder="Sandi..." required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs" /></div>
                   </div>
-
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">Role Utama</label>
-                    <select value={newGuru.role} onChange={(e) => setNewGuru({ ...newGuru, role: e.target.value })} className="w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs text-slate-700">
-                      <option value="guru_mapel">Guru Mata Pelajaran</option>
-                      <option value="guru_bk">Guru BK</option>
-                    </select>
+                    <select value={newGuru.role} onChange={(e) => setNewGuru({ ...newGuru, role: e.target.value })} className="w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs text-slate-700"><option value="guru_mapel">Guru Mata Pelajaran</option><option value="guru_bk">Guru BK</option></select>
                   </div>
-
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">Mata Pelajaran (Ketik Manual)</label>
                     <input type="text" value={newGuru.mataPelajaran} onChange={(e) => setNewGuru({ ...newGuru, mataPelajaran: e.target.value })} placeholder="Contoh: IPA, Matematika..." className="w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs" />
                   </div>
-
                   <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
                     <div className="flex items-center justify-between"><span className="text-[11px] font-bold text-slate-600">Sebagai Wali Kelas</span><input type="checkbox" checked={newGuru.isWaliKelas} onChange={(e) => setNewGuru({ ...newGuru, isWaliKelas: e.target.checked })} className="w-4 h-4 text-sky-600" /></div>
                     {newGuru.isWaliKelas && (
                       <select value={newGuru.kelasWali} onChange={(e) => setNewGuru({ ...newGuru, kelasWali: e.target.value })} required className="w-full text-xs p-2 rounded bg-white border"><option value="">-- Pilih Kelas --</option><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
                     )}
                   </div>
-                  
-                  <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-600">Aktif Tugas Piket</span>
-                    <input type="checkbox" checked={newGuru.isGuruPiket} onChange={(e) => setNewGuru({ ...newGuru, isGuruPiket: e.target.checked })} className="w-4 h-4 text-sky-600" />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Ekskul yang Dibina (Ketik Manual)</label>
-                    <input type="text" value={newGuru.namaEkskul} onChange={(e) => setNewGuru({ ...newGuru, namaEkskul: e.target.value })} placeholder="Contoh: Hortikultura" className="w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs" />
-                  </div>
-
+                  <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between"><span className="text-[11px] font-bold text-slate-600">Aktif Tugas Piket</span><input type="checkbox" checked={newGuru.isGuruPiket} onChange={(e) => setNewGuru({ ...newGuru, isGuruPiket: e.target.checked })} className="w-4 h-4 text-sky-600" /></div>
+                  <div><label className="block text-[11px] font-bold text-slate-500 mb-1">Ekskul yang Dibina (Ketik Manual)</label><input type="text" value={newGuru.namaEkskul} onChange={(e) => setNewGuru({ ...newGuru, namaEkskul: e.target.value })} placeholder="Contoh: Hortikultura" className="w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs" /></div>
                   <button type="submit" className="w-full py-2 bg-sky-600 text-white font-bold text-xs rounded-xl hover:bg-sky-700 shadow-sm transition"><PlusCircle className="w-3.5 h-3.5" /> Buat Akun Guru</button>
                 </form>
               </div>
@@ -467,10 +440,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                     <tbody className="divide-y divide-slate-100 text-xs text-slate-600">
                       {gurus.map((g: any) => (
                         <tr key={g.id} className="hover:bg-slate-50/40">
-                          <td className="p-3 pl-4 font-bold text-slate-800">
-                            {g.nama_lengkap || g.name}
-                            {g.username && <span className="block text-[10px] text-slate-400 font-mono mt-0.5">User: {g.username}</span>}
-                          </td>
+                          <td className="p-3 pl-4 font-bold text-slate-800">{g.nama_lengkap || g.name}{g.username && <span className="block text-[10px] text-slate-400 font-mono mt-0.5">User: {g.username}</span>}</td>
                           <td className="p-3 font-semibold text-slate-700">{g.mata_pelajaran || g.mapel || <span className="text-slate-400 italic font-normal">Belum di-set</span>}</td>
                           <td className="p-3">
                             <div className="flex flex-wrap gap-1">
@@ -511,35 +481,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                 <>
                   <div><label className="block text-[10px] font-bold text-slate-400 mb-1">NISN</label><input type="text" value={editingItem.data.nisn} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, nisn: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
                   <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Nama Siswa</label><input type="text" value={editingItem.data.name} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, name: e.target.value } })} required className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
-                  <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Kelas</label>
-                    <select value={editingItem.data.kelas} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, kelas: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl"><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 mb-1">Kelas</label>
+                      <select value={editingItem.data.kelas} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, kelas: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl"><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 mb-1">Jenis Kelamin</label>
+                      <select value={editingItem.data.jenisKelamin} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, jenisKelamin: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl"><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select>
+                    </div>
                   </div>
                 </>
               ) : (
                 <>
                   <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Nama Guru</label><input type="text" value={editingItem.data.name} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, name: e.target.value } })} required className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
                   <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Username Login</label><input type="text" value={editingItem.data.username} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, username: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
-                  
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 mb-1">Role Utama</label>
-                    <select value={editingItem.data.role} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, role: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl">
-                      <option value="guru_mapel">Guru Mata Pelajaran</option>
-                      <option value="guru_bk">Guru BK</option>
-                    </select>
+                    <select value={editingItem.data.role} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, role: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl"><option value="guru_mapel">Guru Mata Pelajaran</option><option value="guru_bk">Guru BK</option></select>
                   </div>
-
                   <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Mata Pelajaran</label><input type="text" value={editingItem.data.mataPelajaran} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, mataPelajaran: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
-
                   <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
                     <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-600">Sebagai Wali Kelas</span><input type="checkbox" checked={editingItem.data.isWaliKelas} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, isWaliKelas: e.target.checked } })} className="w-4 h-4" /></div>
                     {editingItem.data.isWaliKelas && (
                       <select value={editingItem.data.kelasWali} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, kelasWali: e.target.value } })} className="w-full bg-white border rounded-lg p-1.5 text-xs font-semibold"><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
                     )}
                   </div>
-                  <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Tugas Guru Piket</span>
-                    <input type="checkbox" checked={editingItem.data.isGuruPiket} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, isGuruPiket: e.target.checked } })} className="w-4 h-4" />
-                  </div>
+                  <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between"><span className="text-xs font-bold text-slate-600">Tugas Guru Piket</span><input type="checkbox" checked={editingItem.data.isGuruPiket} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, isGuruPiket: e.target.checked } })} className="w-4 h-4" /></div>
                   <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Pembina Ekstrakurikuler</label><input type="text" value={editingItem.data.namaEkskul} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, namaEkskul: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
                 </>
               )}
