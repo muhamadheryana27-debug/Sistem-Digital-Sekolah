@@ -14,10 +14,8 @@ interface AdminPanelProps {
 const DAYS_OF_WEEK = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
-  // Destructuring aman dari context dengan proteksi fallback fungsi kosong
   const context = useApp() || {};
   const bulkInsertSiswa = context.bulkInsertSiswa || (async () => {});
-  const bulkInsertGurus = context.bulkInsertGurus || (async () => {});
   const bulkInsertPelanggaran = context.bulkInsertPelanggaran || (async () => {});
   const addMasterPelanggaran = context.addMasterPelanggaran || (async () => {});
   const masterPelanggarans = context.masterPelanggarans || [];
@@ -29,22 +27,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const [uploadType, setUploadType] = useState<'siswa' | 'guru' | 'pelanggaran'>('siswa');
   const [activeSubTab, setActiveSubTab] = useState<'siswa' | 'guru'>('siswa');
   
-  // State Pelanggaran Manual
+  // State Input Pelanggaran BK
   const [katManual, setKatManual] = useState('Ringan');
   const [jenisManual, setJenisManual] = useState('');
   const [bobotManual, setBobotManual] = useState('5');
   const [successManual, setSuccessManual] = useState('');
 
-  // State Input Siswa Baru Satuan
+  // State Pendaftaran Manual Siswa
   const [newSiswa, setNewSiswa] = useState({ nisn: '', name: '', kelas: '' });
   
-  // State Input Pembuatan Akun Guru Baru Manual (Bebas Ketik Mapel & Ekskul)
+  // State Input Pembuatan Akun Guru Baru Manual (Sesuai skema database asli Anda)
   const [newGuru, setNewGuru] = useState({ 
-    name: '', username: '', password: '', role: 'guru_mapel', mataPelajaran: '', 
-    isWaliKelas: false, kelasWali: '', isGuruPiket: false, piketDays: [] as string[], namaEkskul: ''
+    name: '', 
+    username: '', 
+    password: '', 
+    role: 'guru_mapel', 
+    mataPelajaran: '', 
+    isWaliKelas: false, 
+    kelasWali: '', 
+    isGuruPiket: false, 
+    namaEkskul: ''
   });
 
-  // State Modal Aksi Edit Data & Manajemen Kredensial
+  // State Kontrol Dialog Pop-up (Edit & Reset Sandi)
   const [editingItem, setEditingItem] = useState<{ type: 'siswa' | 'guru'; data: any } | null>(null);
   const [passwordModal, setPasswordModal] = useState<{ isOpen: boolean; userId: string; userName: string; newPass: string } | null>(null);
 
@@ -55,30 +60,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDayCheckboxChange = (day: string, isChecked: boolean) => {
-    if (isChecked) {
-      setNewGuru(prev => ({ ...prev, piketDays: [...prev.piketDays, day] }));
-    } else {
-      setNewGuru(prev => ({ ...prev, piketDays: prev.piketDays.filter(d => d !== day) }));
-    }
-  };
-
-  const handleEditDayCheckboxChange = (day: string, isChecked: boolean) => {
-    if (!editingItem) return;
-    const currentDays = editingItem.data.piketDays || [];
-    const updatedDays = isChecked ? [...currentDays, day] : currentDays.filter((d: string) => d !== day);
-    setEditingItem({ ...editingItem, data: { ...editingItem.data, piketDays: updatedDays } });
-  };
-
   const handleDownloadTemplate = () => {
     let dataTemplate: any[] = [];
     if (uploadType === 'siswa') {
       dataTemplate = [{ "nisn": "0401234561", "nama_siswa": "Nama Siswa Contoh A", "kelas": "VII-A" }];
     } else if (uploadType === 'guru') {
       dataTemplate = [{ 
-        "nama_lengkap": "Muhamad Sidik Heryana, S.Pd", "username": "sidik95", "password_awal": "sandi123",
-        "role": "guru_mapel", "mata_pelajaran": "IPA Terpadu", "is_wali_kelas": "true", 
-        "kelas_wali": "VII-A", "is_guru_piket": "true", "hari_piket": "Senin, Jumat", "nama_ekstrakurikuler": "Hortikultura" 
+        "nama_lengkap": "Muhamad Sidik Heryana, S.Pd", "username": "sidik95", "password": "sandi123",
+        "role": "guru_mapel", "mata_pelajaran": "IPA", "is_wali_kelas": "true", 
+        "kelas_wali": "VII-A", "is_guru_piket": "false", "nama_ekstrakurikuler": "Hortikultura" 
       }];
     } else {
       dataTemplate = [{ "kategori": "Ringan", "jenis_kasus": "Terlambat masuk sekolah setelah bel gerbang", "bobot": 5 }];
@@ -120,12 +110,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
           for (const d of normalizedData) {
             const isWali = d.is_wali_kelas === 'true' || d.is_wali_kelas === '1';
             const isPiket = d.is_guru_piket === 'true' || d.is_guru_piket === '1';
-            const parsedDays = d.hari_piket ? d.hari_piket.split(',').map((h: string) => h.trim()) : [];
 
+            // 1. Insert kredensial ke tabel 'user'
+            const { data: userData, error: userError } = await supabase
+              .from('user')
+              .insert([{ username: d.username, password: d.password_awal || d.password, role: d.role || 'guru_mapel' }])
+              .select()
+              .single();
+
+            if (userError) throw userError;
+
+            // 2. Insert profil ke tabel 'profiles' terikat ke user_id
             await supabase.from('profiles').insert([{
-              nama_lengkap: d.nama_lengkap || d.name || '', username: d.username || null, password_clear: d.password_awal || null,
-              role: d.role || 'guru_mapel', mata_pelajaran: d.mata_pelajaran || null, nama_ekstrakurikuler: d.nama_ekstrakurikuler || null,
-              is_wali_kelas: isWali, kelas_wali: isWali ? d.kelas_wali : null, is_guru_piket: isPiket, piket_days: parsedDays
+              user_id: userData.id,
+              nama_lengkap: d.nama_lengkap || d.name || '',
+              mata_pelajaran: d.mata_pelajaran || null,
+              mapel: d.mata_pelajaran || null,
+              is_wali_kelas: isWali,
+              kelas_wali: isWali ? d.kelas_wali : null,
+              is_guru_piket: isPiket,
+              nama_ekstrakurikuler: d.nama_ekstrakurikuler || null
             }]);
           }
           setUploadSuccess("Sukses memproses impor repositori data guru!");
@@ -168,6 +172,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     finally { setIsSubmitting(false); }
   };
 
+  // --- SINKRONISASI AKUN MANUAL: TABEL USER & PROFILES ---
   const handleAddGuruManual = async (e: FormEvent) => {
     e.preventDefault();
     if (!newGuru.name || !newGuru.username || !newGuru.password) {
@@ -176,18 +181,43 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     }
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('profiles').insert([{
-        nama_lengkap: newGuru.name, username: newGuru.username, password_clear: newGuru.password, role: newGuru.role,
-        mata_pelajaran: newGuru.mataPelajaran || null, nama_ekstrakurikuler: newGuru.namaEkskul || null,
-        is_wali_kelas: newGuru.isWaliKelas, kelas_wali: newGuru.isWaliKelas ? newGuru.kelasWali : null,
-        is_guru_piket: newGuru.isGuruPiket, piket_days: newGuru.isGuruPiket ? newGuru.piketDays : []
-      }]);
-      if (error) throw error;
-      alert(`Sukses meregistrasikan pendidik: ${newGuru.name}`);
-      setNewGuru({ name: '', username: '', password: '', role: 'guru_mapel', mataPelajaran: '', isWaliKelas: false, kelasWali: '', isGuruPiket: false, piketDays: [], namaEkskul: '' });
+      // 1. Tambahkan ke tabel 'user' asli Anda untuk keperluan login
+      const { data: userData, error: userError } = await supabase
+        .from('user')
+        .insert([{
+          username: newGuru.username,
+          password: newGuru.password,
+          role: newGuru.role
+        }])
+        .select()
+        .single();
+
+      if (userError) throw userError;
+
+      // 2. Hubungkan ID ke tabel 'profiles' melalui 'user_id'
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([{
+          user_id: userData.id,
+          nama_lengkap: newGuru.name,
+          mata_pelajaran: newGuru.mataPelajaran || null,
+          mapel: newGuru.mataPelajaran || null,
+          is_wali_kelas: newGuru.isWaliKelas,
+          kelas_wali: newGuru.isWaliKelas ? newGuru.kelasWali : null,
+          is_guru_piket: newGuru.isGuruPiket,
+          nama_ekstrakurikuler: newGuru.namaEkskul || null
+        }]);
+
+      if (profileError) throw profileError;
+
+      alert(`Sukses mendaftarkan akun guru baru: ${newGuru.name}`);
+      setNewGuru({ name: '', username: '', password: '', role: 'guru_mapel', mataPelajaran: '', isWaliKelas: false, kelasWali: '', isGuruPiket: false, namaEkskul: '' });
       window.location.reload();
-    } catch (err: any) { alert(err.message); } 
-    finally { setIsSubmitting(false); }
+    } catch (err: any) { 
+      alert("Gagal membuat akun: " + err.message); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   const handleSaveEdit = async (e: FormEvent) => {
@@ -199,28 +229,44 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
         const { error } = await supabase.from('students').update({ nisn: editingItem.data.nisn || null, nama_siswa: editingItem.data.name, kelas: editingItem.data.kelas }).eq('id', editingItem.data.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('profiles').update({
-          nama_lengkap: editingItem.data.name, username: editingItem.data.username || null, role: editingItem.data.role,
-          mata_pelajaran: editingItem.data.mataPelajaran || null, nama_ekstrakurikuler: editingItem.data.namaEkskul || null,
-          is_wali_kelas: editingItem.data.isWaliKelas, kelas_wali: editingItem.data.isWaliKelas ? editingItem.data.kelasWali : null,
-          is_guru_piket: editingItem.data.isGuruPiket, piket_days: editingItem.data.isGuruPiket ? editingItem.data.piketDays : []
+        // Update data ke tabel profiles
+        const { error: profErr } = await supabase.from('profiles').update({
+          nama_lengkap: editingItem.data.name,
+          mata_pelajaran: editingItem.data.mataPelajaran || null,
+          mapel: editingItem.data.mataPelajaran || null,
+          is_wali_kelas: editingItem.data.isWaliKelas,
+          kelas_wali: editingItem.data.isWaliKelas ? editingItem.data.kelasWali : null,
+          is_guru_piket: editingItem.data.isGuruPiket,
+          nama_ekstrakurikuler: editingItem.data.namaEkskul || null
         }).eq('id', editingItem.data.id);
-        if (error) throw error;
+        
+        if (profErr) throw profErr;
+
+        // Update role di tabel user jika dirubah
+        if (editingItem.data.user_id && editingItem.data.role) {
+          await supabase.from('user').update({ role: editingItem.data.role, username: editingItem.data.username }).eq('id', editingItem.data.user_id);
+        }
       }
-      alert('Perubahan data aman disimpan!');
+      alert('Perubahan data berhasil disimpan!');
       setEditingItem(null);
       window.location.reload();
     } catch (err: any) { alert(err.message); }
     finally { setIsSubmitting(false); }
   };
 
-  const handleDeleteItem = async (type: 'siswa' | 'guru', id: string, name: string) => {
+  const handleDeleteItem = async (type: 'siswa' | 'guru', id: string, name: string, userId?: string) => {
     if (!window.confirm(`Apakah Anda yakin ingin menghapus permanen data ${type}: ${name}?`)) return;
     try {
-      const targetTable = type === 'siswa' ? 'students' : 'profiles';
-      const { error } = await supabase.from(targetTable).delete().eq('id', id);
-      if (error) throw error;
-      alert(`Sukses membuang master data ${name}`);
+      if (type === 'siswa') {
+        await supabase.from('students').delete().eq('id', id);
+      } else {
+        // Hapus profiles dahulu baru kemudian tabel user relasinya
+        await supabase.from('profiles').delete().eq('id', id);
+        if (userId) {
+          await supabase.from('user').delete().eq('id', userId);
+        }
+      }
+      alert(`Sukses menghapus data ${name}`);
       window.location.reload();
     } catch (err: any) { alert(err.message); }
   };
@@ -230,12 +276,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
     if (!passwordModal || !passwordModal.newPass.trim()) return;
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('profiles').update({ password_clear: passwordModal.newPass }).eq('id', passwordModal.userId);
+      // Mengubah password pada tabel user kustom Anda
+      const { error } = await supabase
+        .from('user')
+        .update({ password: passwordModal.newPass })
+        .eq('id', passwordModal.userId);
+
       if (error) throw error;
-      alert(`Sandi akun ${passwordModal.userName} berhasil diubah!`);
+      alert(`Kata sandi akun ${passwordModal.userName} berhasil diperbarui!`);
       setPasswordModal(null);
-    } catch (err: any) { alert(err.message); }
-    finally { setIsSubmitting(false); }
+    } catch (err: any) { 
+      alert("Gagal meriset sandi: " + err.message); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   return (
@@ -265,44 +319,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
 
               {uploadSuccess && <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 font-medium"><CheckCircle className="w-4 h-4 text-emerald-600" /> {uploadSuccess}</div>}
               {uploadError && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-2 font-medium"><AlertCircle className="w-4 h-4 text-rose-600" /> {uploadError}</div>}
-
-              {uploadType === 'pelanggaran' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
-                  <form onSubmit={handleSaveManualPelanggaran} className="space-y-4">
-                    <h5 className="text-xs font-bold uppercase text-slate-700">Form Jenis Pelanggaran BK</h5>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Kategori</label>
-                        <select value={katManual} onChange={(e) => setKatManual(e.target.value)} className="w-full bg-slate-50 border rounded px-2 py-1 text-xs text-slate-700"><option value="Ringan">Ringan</option><option value="Sedang">Sedang</option><option value="Berat">Berat</option><option value="Sangat Berat">Sangat Berat</option></select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">Bobot Skor</label>
-                        <input type="number" value={bobotManual} onChange={(e) => setBobotManual(e.target.value)} className="w-full bg-slate-50 border rounded px-2 py-1 text-xs text-slate-700" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Jenis Kasus Pelanggaran</label>
-                      <input type="text" required value={jenisManual} onChange={(e) => setJenisManual(e.target.value)} placeholder="Contoh: Berkelahi di sekolah" className="w-full bg-slate-50 border rounded px-3 py-1.5 text-xs" />
-                    </div>
-                    {successManual && <p className="text-xs text-emerald-700 bg-emerald-50 p-2 rounded">{successManual}</p>}
-                    <button type="submit" className="w-full bg-slate-900 text-white font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-1.5 shadow"><Save className="w-4 h-4" /> Simpan Pelanggaran</button>
-                  </form>
-
-                  <div className="space-y-3">
-                    <h5 className="text-xs font-bold uppercase text-slate-700">List Master Aturan Pelanggaran Active ({masterPelanggarans.length})</h5>
-                    <div className="max-h-[220px] overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl px-3 bg-slate-50/40">
-                      {masterPelanggarans.map(p => (
-                        <div key={p.id} className="py-2.5 flex justify-between items-center text-xs gap-2">
-                          <div><p className="font-semibold text-slate-800">{p.jenis_kasus}</p><span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 mt-1 inline-block uppercase">{p.kategori}</span></div>
-                          <span className="bg-rose-50 text-rose-700 border border-rose-100 rounded px-2 py-0.5 font-bold text-[10px] shrink-0">Poin: {p.bobot}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -323,7 +341,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                   <div><label className="block text-[11px] font-bold text-slate-500 mb-1">Kelas</label>
                     <select value={newSiswa.kelas} onChange={(e) => setNewSiswa({ ...newSiswa, kelas: e.target.value })} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option value="">-- Pilih Kelas --</option><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
                   </div>
-                  <button type="submit" disabled={isSubmitting} className="w-full py-2 bg-sky-600 text-white font-bold text-xs rounded-xl hover:bg-sky-700 flex items-center justify-center gap-2 transition"><PlusCircle className="w-3.5 h-3.5" /> Simpan Siswa</button>
+                  <button type="submit" className="w-full py-2 bg-sky-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2"><PlusCircle className="w-3.5 h-3.5" /> Simpan Siswa</button>
                 </form>
               </div>
 
@@ -389,13 +407,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                   
                   <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
                     <div className="flex items-center justify-between"><span className="text-[11px] font-bold text-slate-600">Aktif Tugas Piket</span><input type="checkbox" checked={newGuru.isGuruPiket} onChange={(e) => setNewGuru({ ...newGuru, isGuruPiket: e.target.checked })} className="w-4 h-4 text-sky-600" /></div>
-                    {newGuru.isGuruPiket && (
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {DAYS_OF_WEEK.map((day) => (
-                          <label key={day} className="flex items-center gap-1 bg-white border p-1 rounded text-[10px] font-medium text-slate-600 cursor-pointer"><input type="checkbox" checked={newGuru.piketDays.includes(day)} onChange={(e) => handleDayCheckboxChange(day, e.target.checked)} className="w-3 h-3 text-sky-600" />{day}</label>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
                   <div>
@@ -418,23 +429,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                       {gurus.map((g: any) => (
                         <tr key={g.id} className="hover:bg-slate-50/40">
                           <td className="p-3 pl-4 font-bold text-slate-800">
-                            {g.name}
+                            {g.nama_lengkap || g.name}
                             {g.username && <span className="block text-[10px] text-slate-400 font-mono mt-0.5">User: {g.username}</span>}
                           </td>
-                          <td className="p-3 font-semibold text-slate-700">{g.mata_pelajaran || g.mata_pelajaran_1 || <span className="text-slate-400 italic font-normal">Belum di-set</span>}</td>
+                          <td className="p-3 font-semibold text-slate-700">{g.mata_pelajaran || g.mapel || <span className="text-slate-400 italic font-normal">Belum di-set</span>}</td>
                           <td className="p-3">
                             <div className="flex flex-wrap gap-1">
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${g.role === 'guru_bk' ? 'bg-rose-50 text-rose-600' : 'bg-sky-50 text-sky-600'}`}>{g.role === 'guru_bk' ? 'Guru BK' : 'Guru Mapel'}</span>
-                              {g.kelasWali && <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold">Wali {g.kelasWali}</span>}
-                              {g.subRoles?.includes('guru_piket') && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded text-[10px] font-bold">Piket {g.piketDays && g.piketDays.length > 0 ? `(${g.piketDays.join(', ')})` : ''}</span>}
-                              {g.namaEkskul && <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[10px] font-bold">Pembina {g.namaEkskul}</span>}
+                              {g.kelas_wali && <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold">Wali {g.kelas_wali}</span>}
+                              {g.is_guru_piket && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded text-[10px] font-bold">Guru Piket</span>}
+                              {g.nama_ekstrakurikuler && <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[10px] font-bold">Pembina {g.nama_ekstrakurikuler}</span>}
                             </div>
                           </td>
                           <td className="p-3 text-center">
                             <div className="flex justify-center gap-1">
-                              <button onClick={() => setEditingItem({ type: 'guru', data: { id: g.id, name: g.name, username: g.username || '', role: g.role || 'guru_mapel', mataPelajaran: g.mata_pelajaran || '', isWaliKelas: !!g.kelasWali, kelasWali: g.kelasWali || '', isGuruPiket: g.subRoles?.includes('guru_piket') || false, piketDays: g.piketDays || [], namaEkskul: g.namaEkskul || '' } })} className="p-1.5 text-sky-600 hover:bg-sky-50 rounded" title="Edit Profil"><Edit2 className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => setPasswordModal({ isOpen: true, userId: g.id, userName: g.name, newPass: '' })} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Ubah Password"><Lock className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => handleDeleteItem('guru', g.id, g.name)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded" title="Hapus User"><Trash2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => setEditingItem({ type: 'guru', data: { id: g.id, user_id: g.user_id, name: g.nama_lengkap || g.name || '', username: g.username || '', role: g.role || 'guru_mapel', mataPelajaran: g.mata_pelajaran || g.mapel || '', isWaliKelas: !!g.is_wali_kelas, kelasWali: g.kelas_wali || '', isGuruPiket: !!g.is_guru_piket, namaEkskul: g.nama_ekstrakurikuler || '' } })} className="p-1.5 text-sky-600 hover:bg-sky-50 rounded" title="Edit Profil"><Edit2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => setPasswordModal({ isOpen: true, userId: g.user_id, userName: g.nama_lengkap || g.name || '', newPass: '' })} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Ubah Password"><Lock className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleDeleteItem('guru', g.id, g.nama_lengkap || g.name || '', g.user_id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded" title="Hapus User"><Trash2 className="w-3.5 h-3.5" /></button>
                             </div>
                           </td>
                         </tr>
@@ -478,7 +489,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                     </select>
                   </div>
 
-                  <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Mata Pelajaran (Ketik Manual)</label><input type="text" value={editingItem.data.mataPelajaran} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, mataPelajaran: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
+                  <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Mata Pelajaran</label><input type="text" value={editingItem.data.mataPelajaran} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, mataPelajaran: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
 
                   <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
                     <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-600">Sebagai Wali Kelas</span><input type="checkbox" checked={editingItem.data.isWaliKelas} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, isWaliKelas: e.target.checked } })} className="w-4 h-4" /></div>
@@ -486,15 +497,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToDashboard }) => {
                       <select value={editingItem.data.kelasWali} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, kelasWali: e.target.value } })} className="w-full bg-white border rounded-lg p-1.5 text-xs font-semibold"><option value="VII-A">VII-A</option><option value="VII-B">VII-B</option><option value="VIII-A">VIII-A</option><option value="VIII-B">VIII-B</option><option value="IX-A">IX-A</option><option value="IX-B">IX-B</option></select>
                     )}
                   </div>
-                  <div className="p-3 bg-slate-50 border rounded-xl space-y-3">
-                    <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-600">Tugas Guru Piket</span><input type="checkbox" checked={editingItem.data.isGuruPiket} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, isGuruPiket: e.target.checked } })} className="w-4 h-4" /></div>
-                    {editingItem.data.isGuruPiket && (
-                      <div className="flex flex-wrap gap-2">
-                        {DAYS_OF_WEEK.map((day) => (
-                          <label key={day} className="flex items-center gap-1 bg-white border px-2 py-1 rounded-lg text-[10px] font-medium text-slate-600 cursor-pointer"><input type="checkbox" checked={(editingItem.data.piketDays || []).includes(day)} onChange={(e) => handleEditDayCheckboxChange(day, e.target.checked)} className="w-3.5 h-3.5" />{day}</label>
-                        ))}
-                      </div>
-                    )}
+                  <div className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Tugas Guru Piket</span>
+                    <input type="checkbox" checked={editingItem.data.isGuruPiket} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, isGuruPiket: e.target.checked } })} className="w-4 h-4" />
                   </div>
                   <div><label className="block text-[10px] font-bold text-slate-400 mb-1">Pembina Ekstrakurikuler</label><input type="text" value={editingItem.data.namaEkskul} onChange={(e) => setEditingItem({ ...editingItem, data: { ...editingItem.data, namaEkskul: e.target.value } })} className="w-full bg-slate-50 border p-2 text-xs rounded-xl" /></div>
                 </>
