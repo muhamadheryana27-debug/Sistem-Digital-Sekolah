@@ -23,7 +23,7 @@ interface AppContextType {
     user: { id: string; name: string; role: string } | null,
   ) => void;
   gurus: Guru[];
-  siswa: Siswa[];
+  siswa: Siswa[]; // State frontend tetap menggunakan nama siswa agar tidak merusak komponen UI lain
   jurnalMengajar: JurnalMengajar[];
   kasusBK: KasusBK[];
   nilaiEkskul: NilaiEkskul[];
@@ -31,7 +31,7 @@ interface AppContextType {
   isLoading: boolean;
 
   // Actions
-  addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi?: any[]) => Promise<void>;
+  addJurnalMengajar: (jurnal: Omit<JurnalMengajar, "id">, absensi?: any[]) => Promise<void>;
   addKasusBK: (kasus: Omit<KasusBK, "id">) => Promise<void>;
   addNilaiEkskul: (nilai: Omit<NilaiEkskul, "id">) => Promise<void>;
   addMasterPelanggaran: (
@@ -42,8 +42,6 @@ interface AppContextType {
   bulkInsertPelanggaran: (
     list: Omit<MasterPelanggaran, "id">[],
   ) => Promise<void>;
-  
-  // Aksi penanganan nilai akademik mata pelajaran siswa
   updateNilaiSiswa: (siswaId: string, mapel: string, dataNilai: any) => Promise<boolean>;
 }
 
@@ -86,11 +84,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             role
           )
         `),
-        supabase.from("siswa").select("*"),
+        supabase.from("students").select("*"), // DIUBAH: Menggunakan tabel 'students' sesuai database Anda
         supabase.from("teaching_journals").select("*"),
         supabase.from("bk_records").select("*"), 
         supabase.from("extracurricular_scores").select("*"), 
-        supabase.from("master-pelanggarans").select("*"),
+        supabase.from("master_pelanggarans").select("*"), // Sesuai nama di dump SQL Anda
       ]);
 
       if (resProfiles)
@@ -100,7 +98,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             
             if (p.is_wali_kelas || p.kelas_wali) sRoles.push("wali_kelas");
             if (p.is_guru_piket) sRoles.push("guru_piket");
-            if (p.nama_ekstrakurikuler || p.nama_ekskul) sRoles.push("pembina_ekskul");
+            if (p.nama_ekstrakurikuler) sRoles.push("pembina_ekskul");
             
             const dbRole = p.users?.role || p.role;
             if (p.nama_lengkap?.toLowerCase().includes("bk") || dbRole === "guru_bk")
@@ -117,8 +115,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               role: determinedRole, 
               subRoles: sRoles,
               kelasWali: p.kelas_wali || null,
-              namaEkskul: p.nama_ekstrakurikuler || p.nama_ekskul || null,
-              mata_pelajaran: p.mata_pelajaran || p.mata_pelajaran_1 || "Umum",
+              namaEkskul: p.nama_ekstrakurikuler || null,
+              mata_pelajaran: p.mapel || p.mata_pelajaran || "Umum", // Mengambil kolom mapel dari profile Anda
               piketDays: p.piket_days || [],
             };
           }),
@@ -127,10 +125,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       if (resStudents)
         setSiswa(
           resStudents.map((s) => {
-            // Mengubah otomatis spasi "VIII A" dari Excel menjadi strip "VIII-A" agar lolos filter panel komponen UI
-            let cleanKelas = s.kelas || "";
-            if (cleanKelas && !cleanKelas.includes("-")) {
-              cleanKelas = cleanKelas.trim().replace(/\s+/g, "-");
+            // SINKRONISASI FORMAT KELAS:
+            // Mengubah spasi "VIII A" dari database menjadi strip "VIII-A" agar dibaca oleh komponen UI Frontend
+            let formatKelas = s.kelas || "";
+            if (formatKelas && !formatKelas.includes("-")) {
+              formatKelas = formatKelas.trim().replace(/\s+/g, "-");
             }
 
             return {
@@ -139,9 +138,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               name: s.nama_siswa || "",
               nama_siswa: s.nama_siswa || "",
               jenis_kelamin: s.jenis_kelamin || "",
-              kelas: cleanKelas,
+              kelas: formatKelas, // Menggunakan format seragam dengan tanda hubung (-)
               statusAbsen: "Hadir",
-              ekskul: s.kelas_wali || s.ekskul || null,
+              ekskul: s.kelas_wali || null,
             };
           }),
         );
@@ -151,13 +150,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
           resJournals.map((j) => ({
             id: String(j.id),
             guruId: String(j.user_id || ""),
-            guruName: j.mata_ajaran || j.mata_pelajaran || "", 
-            tanggal: j.tanggal || j.created_at?.split("T")[0] || new Date().toISOString().split("T")[0],
+            guruName: j.mata_pelajaran || "", 
+            tanggal: j.created_at?.split("T")[0] || new Date().toISOString().split("T")[0],
             hari: "",
             kelas: j.kelas || "",
             jamKe: j.jam_ke || "",
-            materi: j.materi_pembelajaran || j.materi || "", 
-            aktivitas: j.catatan_kelas || j.aktivitas || "", 
+            materi: j.materi_pembelajaran || "", 
+            aktivitas: j.catatan_kelas || "", 
             absensiSiswa: [],
           })),
         );
@@ -169,10 +168,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             siswaId: String(k.student_id || ""),
             namaSiswa: k.nama_siswa || `Siswa ID ${k.student_id}`,
             kelas: k.kelas || "",
-            tanggal: k.created_at ? k.created_at.split("T")[0] : (k.tanggal ? k.tanggal : ""),
-            tipeKasus: k.kategori_kasus || k.kategori_cases || "Pelanggaran",
-            deskripsi: k.detail_kasus || k.deskripsi || "",
-            solusi: k.tindakan_penanganan || k.solusi || "",
+            tanggal: k.created_at ? k.created_at.split("T")[0] : "",
+            tipeKasus: k.kategori_kasus || "Pelanggaran",
+            deskripsi: k.detail_kasus || "",
+            solusi: k.tindakan_penanganan || "",
             penangananOleh: "Guru BK",
           })),
         );
@@ -185,8 +184,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             namaSiswa: n.nama_siswa || "",
             kelas: n.kelas || "",
             namaEkskul: n.nama_ekskul || "",
-            predikat: n.nilai_kualitatif || n.predikat || "B",
-            catatan: n.catatan_pembinaan || n.catatan || "",
+            predikat: n.nilai_kualitatif || "Baik",
+            catatan: n.catatan_pembinaan || "",
           })),
         );
 
@@ -195,8 +194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
           resMasterPelanggaran.map((m) => ({
             id: String(m.id),
             kategori: m.kategori || "",
-            jenis_cases: m.jenis_kasus || m.jenis_cases || "",
-            jenis_kasus: m.jenis_kasus || m.jenis_cases || "",
+            jenis_kasus: m.jenis_kasus || "",
             bobot: Number(m.bobot || 0),
           })),
         );
@@ -244,12 +242,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       .from("bk_records")
       .insert([
         {
+          user_id: Number(currentUser?.id) || 1,
           student_id: Number(kasus.siswaId),
-          kelas: kasus.kelas,
+          kelas: kasus.kelas.replace("-", " "), // Kembalikan ke format spasi untuk DB jika perlu
           kategori_kasus: kasus.tipeKasus,
           detail_kasus: kasus.deskripsi,
           tindakan_penanganan: kasus.solusi,
-          status: "Selesai",
+          status: "Sedang Dibina",
         },
       ])
       .select()
@@ -272,6 +271,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       .from("extracurricular_scores")
       .insert([
         {
+          user_id: Number(currentUser?.id) || 1,
           student_id: Number(nilai.siswaId),
           nama_ekskul: nilai.namaEkskul,
           nilai_kualitatif: nilai.predikat,
@@ -298,7 +298,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     pelanggaran: Omit<MasterPelanggaran, "id">,
   ) => {
     const { data, error } = await supabase
-      .from("master-pelanggarans")
+      .from("master_pelanggarans")
       .insert([
         {
           kategori: pelanggaran.kategori,
@@ -319,10 +319,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     const payload = siswaList.map((s) => ({
       nisn: s.nisn,
       nama_siswa: s.name,
-      kelas: s.kelas,
+      jenis_kelamin: s.jenis_kelamin,
+      kelas: s.kelas.replace("-", " "), // Simpan format spasi "VIII A" ke database
     }));
     const { error } = await supabase
-      .from("siswa")
+      .from("students") // DIUBAH: Target tabel students
       .upsert(payload, { onConflict: "nisn" });
     if (error) throw new Error(error.message);
     await fetchSupabaseData();
@@ -335,6 +336,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       kelas_wali: g.kelasWali,
       is_guru_piket: g.subRoles.includes("guru_piket"),
       nama_ekstrakurikuler: g.namaEkskul,
+      mapel: g.mata_pelajaran,
     }));
     const { error } = await supabase.from("profiles").insert(payload);
     if (error) throw new Error(error.message);
@@ -350,7 +352,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       bobot: Number(l.bobot),
     }));
     const { error } = await supabase
-      .from("master-pelanggarans")
+      .from("master_pelanggarans")
       .insert(payload);
     if (error) throw new Error(error.message);
     await fetchSupabaseData();
@@ -359,15 +361,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const updateNilaiSiswa = async (siswaId: string, mapel: string, dataNilai: any) => {
     try {
       const payload = {
+        user_id: Number(currentUser?.id) || 1,
         student_id: Number(siswaId),
-        kelas: dataNilai.kelas || "",
+        kelas: (dataNilai.kelas || "").replace("-", " "),
         mapel: mapel,
         jenis_penilaian: dataNilai.jenis_penilaian || "Harian",
         nilai: Number(dataNilai.nilai || 0),
       };
 
       const { error } = await supabase
-        .from("student_score")
+        .from("student_scores") // DIUBAH: Sesuai tabel student_scores Anda
         .insert([payload]);
 
       if (error) throw error;
