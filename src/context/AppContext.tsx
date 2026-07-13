@@ -9,6 +9,12 @@ interface AppContextType {
   bkRecords: any[];
   studentScores: any[];
   loading: boolean;
+  currentUser: any | null; // Ditambahkan untuk menampung user login saat ini
+
+  // Fungsi Otentikasi & Sesi
+  login: (username: string, password: string) => Promise<any>;
+  logout: () => void;
+  setCurrentUser: (user: any) => void;
   
   // Fungsi Aksi Modul (CRUD Supabase)
   fetchSiswa: () => Promise<void>;
@@ -32,7 +38,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [masterPelanggaran, setMasterPelanggaran] = useState<any[]>([]);
   const [bkRecords, setBkRecords] = useState<any[]>([]);
   const [studentScores, setStudentScores] = useState<any[]>([]);
+  const [currentUser, setCurrentUserState] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Fungsi untuk melacak user login lokal
+  const setCurrentUser = (user: any) => {
+    setCurrentUserState(user);
+    if (user) {
+      localStorage.setItem('sigap_user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('sigap_user');
+    }
+  };
 
   // 1. Fungsi Fetching Data dari Supabase
   const fetchSiswa = async () => {
@@ -56,6 +73,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (bkData) setBkRecords(bkData);
     if (scoreData) setStudentScores(scoreData);
     
+    // Cek session lokal saat refresh halaman
+    const savedUser = localStorage.getItem('sigap_user');
+    if (savedUser) {
+      setCurrentUserState(JSON.parse(savedUser));
+    }
+
     setLoading(false);
   };
 
@@ -63,7 +86,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     refreshAllData();
   }, []);
 
-  // 2. Aksi Modul Siswa (Admin Panel)
+  // 2. Logika Otentikasi Halaman Login ke Supabase
+  const login = async (username: string, password: string) => {
+    // Mencari ketersediaan akun di tabel 'user' Supabase sesuai input
+    const { data: userRow, error } = await supabase
+      .from('user')
+      .select('*')
+      .eq('username', username)
+      .eq('password', password)
+      .single();
+
+    if (error || !userRow) {
+      throw new Error('Username atau Password salah!');
+    }
+
+    // Ambil profil pelengkap jika ada
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userRow.id)
+      .single();
+
+    const fullUserData = { ...userRow, profile: profileRow || null };
+    setCurrentUser(fullUserData);
+    return fullUserData;
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+  };
+
+  // 3. Aksi Modul Siswa (Admin Panel)
   const addSiswa = async (dataSiswa: any) => {
     const { error } = await supabase.from('siswa').insert([dataSiswa]);
     if (error) throw error;
@@ -82,12 +135,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await fetchSiswa();
   };
 
-  // 3. Aksi Modul Bimbingan Konseling (BK Panel & PKS Kesiswaan)
+  // 4. Aksi Modul Bimbingan Konseling (BK Panel & PKS Kesiswaan)
   const addBkRecord = async (record: any) => {
     const { error } = await supabase.from('bk_records').insert([record]);
     if (error) throw error;
     
-    // Refresh data riwayat kasus setelah input berhasil
     const { data } = await supabase.from('bk_records').select('*');
     if (data) setBkRecords(data);
   };
@@ -105,7 +157,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (error) throw error;
   };
 
-  // 4. Aksi Modul Penilaian (Guru Mapel Panel / Wali Kelas)
+  // 5. Aksi Modul Penilaian (Guru Mapel Panel / Wali Kelas)
   const inputNilai = async (nilaiData: any) => {
     const { error } = await supabase.from('student_score').insert([nilaiData]);
     if (error) throw error;
@@ -124,6 +176,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         bkRecords,
         studentScores,
         loading,
+        currentUser,
+        login,
+        logout,
+        setCurrentUser,
         fetchSiswa,
         addSiswa,
         updateSiswa,
