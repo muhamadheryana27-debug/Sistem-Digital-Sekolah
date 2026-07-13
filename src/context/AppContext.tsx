@@ -1,76 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import {
-  Guru,
-  Siswa,
-  JurnalMengajar,
-  KasusBK,
-  NilaiEkskul,
-  SubRoleType,
-} from "../types";
-import { supabase } from "../lib/supabaseClient";
-
-export interface MasterPelanggaran {
-  id: string;
-  kategori: string;
-  jenis_kasus: string;
-  bobot: number;
-}
-
-interface AppContextType {
-  currentUser: { id: string; name: string; role: string } | null;
-  setCurrentUser: (
-    user: { id: string; name: string; role: string } | null,
-  ) => void;
-  gurus: Guru[];
-  siswa: Siswa[];
-  jurnalMengajar: JurnalMengajar[];
-  kasusBK: KasusBK[];
-  nilaiEkskul: NilaiEkskul[];
-  masterPelanggarans: MasterPelanggaran[];
-  isLoading: boolean;
-
-  // Actions
-  addJurnalMengajar: (jurnal: Omit<JurnalMengajar, "id">, absensi?: any[]) => Promise<void>;
-  addKasusBK: (kasus: Omit<KasusBK, "id">) => Promise<void>;
-  addNilaiEkskul: (nilai: Omit<NilaiEkskul, "id">) => Promise<void>;
-  addMasterPelanggaran: (
-    pelanggaran: Omit<MasterPelanggaran, "id">,
-  ) => Promise<void>;
-  bulkInsertSiswa: (siswaList: Omit<Siswa, "id">[]) => Promise<void>;
-  bulkInsertGurus: (guruList: Omit<Guru, "id">[]) => Promise<void>;
-  bulkInsertPelanggaran: (
-    list: Omit<MasterPelanggaran, "id">[],
-  ) => Promise<void>;
-  
-  // Aksi penanganan nilai akademik mata pelajaran siswa (student_score)
-  updateNilaiSiswa: (siswaId: string, mapel: string, dataNilai: any) => Promise<boolean>;
-}
-
-const AppContext = createContext<AppContextType | undefined>(undefined);
-
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  // Mempertahankan struktur object login asli agar Halaman Login tidak crash
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-    name: string;
-    role: string;
-  } | null>(null);
-  
-  const [gurus, setGurus] = useState<Guru[]>([]);
-  const [siswa, setSiswa] = useState<Siswa[]>([]);
-  const [jurnalMengajar, setJurnalMengajar] = useState<JurnalMengajar[]>([]);
-  const [kasusBK, setKasusBK] = useState<KasusBK[]>([]);
-  const [nilaiEkskul, setNilaiEkskul] = useState<NilaiEkskul[]>([]);
-  const [masterPelanggarans, setMasterPelanggarans] = useState<MasterPelanggaran[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  useEffect(() => {
+useEffect(() => {
     const fetchSupabaseData = async () => {
       setIsLoading(true);
       try {
-        // DISELARASKAN DENGAN STRUKTUR DATABASE BARU ANDA
+        // Mengambil data profiles sekaligus melakukan JOIN ke tabel users berdasarkan user_id
         const [
           { data: resProfiles },
           { data: resStudents },
@@ -79,31 +11,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
           { data: resEkskulScores },
           { data: resMasterPelanggaran },
         ] = await Promise.all([
-          supabase.from("profiles").select("*"),
-          supabase.from("siswa").select("*"), // Diubah dari 'students' -> 'siswa'
+          supabase.from("profiles").select(`
+            *,
+            users:user_id (
+              id,
+              username,
+              role
+            )
+          `),
+          supabase.from("siswa").select("*"),
           supabase.from("teaching_journals").select("*"),
           supabase.from("bk_records").select("*"), 
           supabase.from("extracurricular_scores").select("*"), 
-          supabase.from("master-pelanggarans").select("*"), // Diubah dari 'master_pelanggarans' -> 'master-pelanggarans'
+          supabase.from("master-pelanggarans").select("*"),
         ]);
 
         if (resProfiles)
           setGurus(
-            resProfiles.map((p) => {
+            resProfiles.map((p: any) => {
               const sRoles: SubRoleType[] = ["guru_mapel"];
               
               if (p.is_wali_kelas || p.kelas_wali) sRoles.push("wali_kelas");
               if (p.is_guru_piket) sRoles.push("guru_piket");
               if (p.nama_ekstrakurikuler) sRoles.push("pembina_ekskul");
-              if (p.nama_lengkap?.toLowerCase().includes("bk") || p.role === "guru_bk")
+              
+              // Mengambil data role dari table users hasil relasi join
+              const dbRole = p.users?.role || p.role;
+              if (p.nama_lengkap?.toLowerCase().includes("bk") || dbRole === "guru_bk")
                 sRoles.push("guru_bk");
 
-              const determinedRole = p.role === "admin" ? "admin" : (p.role === "guru_bk" ? "guru_bk" : "guru");
+              const determinedRole = dbRole === "admin" ? "admin" : (dbRole === "guru_bk" ? "guru_bk" : "guru");
 
               return {
                 id: p.user_id ? String(p.user_id) : String(p.id), 
-                nip: p.user_id ? String(p.user_id) : "",
-                name: p.nama_lengkap || "",
+                nip: p.users?.username || (p.user_id ? String(p.user_id) : ""), // Menampilkan username/NIP dari tabel users
+                name: p.nama_lengkap || p.users?.username || "Tanpa Nama",
                 role: determinedRole, 
                 subRoles: sRoles,
                 kelasWali: p.kelas_wali || null,
@@ -118,7 +60,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             resStudents.map((s) => ({
               id: String(s.id),
               nisn: s.nisn || "",
-              name: s.nama_siswa || "", // Disesuaikan kolom baru: nama_siswa
+              name: s.nama_siswa || "",
               kelas: s.kelas || "",
               statusAbsen: "Hadir",
               ekskul: s.kelas_wali || null, 
@@ -146,7 +88,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             resBkRecords.map((k: any) => ({
               id: String(k.id),
               siswaId: String(k.student_id || ""),
-              namaSiswa: k.nama_siswa || `Siswa ID ${k.student_id}`, // Disesuaikan skema baru bk_records
+              namaSiswa: k.nama_siswa || `Siswa ID ${k.student_id}`,
               kelas: k.kelas || "",
               tanggal: k.created_at ? k.created_at.split("T")[0] : (k.crated_at ? k.crated_at.split("T")[0] : ""),
               tipeKasus: (k.kategori_kasus as any) || "Pelanggaran",
@@ -187,211 +129,3 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
 
     fetchSupabaseData();
   }, []);
-
-  const addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi: any[] = []) => {
-    const { data: jurnalData, error: jurnalError } = await supabase
-      .from("teaching_journals")
-      .insert([
-        {
-          user_id: Number(jurnal.guruId) || null,
-          kelas: jurnal.kelas,
-          mata_pelajaran: jurnal.guruName, 
-          jam_ke: jurnal.jamKe,
-          materi_pembelajaran: jurnal.materi, 
-          catatan_kelas: jurnal.aktivitas, 
-        },
-      ])
-      .select()
-      .single();
-
-    if (jurnalError) throw new Error(jurnalError.message);
-
-    if (absensi && absensi.length > 0) {
-      const absensiPayload = absensi.map((a) => ({
-        journal_id: jurnalData.id,
-        student_id: Number(a.siswaId),
-        status: a.status,
-      }));
-
-      const { error: absensiError } = await supabase
-        .from("student_attendance")
-        .insert(absensiPayload);
-      if (absensiError) throw new Error(absensiError.message);
-    }
-
-    setJurnalMengajar((prev) => [
-      ...prev, 
-      { 
-        ...jurnal, 
-        id: String(jurnalData.id),
-        absensiSiswa: absensi 
-      }
-    ]);
-  };
-
-  const addKasusBK = async (kasus: Omit<KasusBK, "id">) => {
-    const { data, error } = await supabase
-      .from("bk_records")
-      .insert([
-        {
-          student_id: Number(kasus.siswaId),
-          kelas: kasus.kelas,
-          kategori_kasus: kasus.tipeKasus,
-          detail_kasus: kasus.deskripsi,
-          tindakan_penanganan: kasus.solusi,
-          status: "Selesai",
-        },
-      ])
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
-    
-    const targetSiswa = siswa.find((s) => s.id === kasus.siswaId);
-    setKasusBK((prev) => [
-      ...prev, 
-      { 
-        ...kasus, 
-        id: String(data.id),
-        namaSiswa: targetSiswa ? targetSiswa.name : kasus.namaSiswa 
-      }
-    ]);
-  };
-
-  const addNilaiEkskul = async (nilai: Omit<NilaiEkskul, "id">) => {
-    const { data, error } = await supabase
-      .from("extracurricular_scores")
-      .insert([
-        {
-          student_id: Number(nilai.siswaId),
-          nama_ekskul: nilai.namaEkskul,
-          nilai_kualitatif: nilai.predikat,
-          catatan_pembinaan: nilai.catatan,
-        },
-      ])
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
-
-    const targetSiswa = siswa.find((s) => s.id === nilai.siswaId);
-    setNilaiEkskul((prev) => [
-      ...prev, 
-      { 
-        ...nilai, 
-        id: String(data.id),
-        namaSiswa: targetSiswa ? targetSiswa.name : nilai.namaSiswa,
-        kelas: targetSiswa ? targetSiswa.kelas : nilai.kelas 
-      }
-    ]);
-  };
-
-  const addMasterPelanggaran = async (
-    pelanggaran: Omit<MasterPelanggaran, "id">,
-  ) => {
-    const { data, error } = await supabase
-      .from("master-pelanggarans")
-      .insert([
-        {
-          kategori: pelanggaran.kategori,
-          jenis_kasus: pelanggaran.jenis_kasus,
-          bobot: Number(pelanggaran.bobot),
-        },
-      ])
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
-    setMasterPelanggarans((prev) => [
-      ...prev,
-      { ...pelanggaran, id: String(data.id) },
-    ]);
-  };
-
-  const bulkInsertSiswa = async (siswaList: Omit<Siswa, "id">[]) => {
-    const payload = siswaList.map((s) => ({
-      nama_siswa: s.name, // Disesuaikan nama_siswa
-      kelas: s.kelas,
-    }));
-    const { error } = await supabase.from("siswa").insert(payload);
-    if (error) throw new Error(error.message);
-  };
-
-  const bulkInsertGurus = async (guruList: Omit<Guru, "id">[]) => {
-    const payload = guruList.map((g) => ({
-      nama_lengkap: g.name,
-      is_wali_kelas: g.subRoles.includes("wali_kelas"),
-      kelas_wali: g.kelasWali,
-      is_guru_piket: g.subRoles.includes("guru_piket"),
-      nama_ekstrakurikuler: g.namaEkskul,
-    }));
-    const { error } = await supabase.from("profiles").insert(payload);
-    if (error) throw new Error(error.message);
-  };
-
-  const bulkInsertPelanggaran = async (
-    list: Omit<MasterPelanggaran, "id">[],
-  ) => {
-    const payload = list.map((l) => ({
-      kategori: l.kategori,
-      jenis_kasus: l.jenis_kasus,
-      bobot: Number(l.bobot),
-    }));
-    const { error } = await supabase
-      .from("master-pelanggarans")
-      .insert(payload);
-    if (error) throw new Error(error.message);
-  };
-
-  // DIHUBUNGKAN KE TABEL BARU ANDA: student_score
-  const updateNilaiSiswa = async (siswaId: string, mapel: string, dataNilai: any) => {
-    try {
-      const payload = {
-        student_id: Number(siswaId),
-        kelas: dataNilai.kelas || "",
-        mapel: mapel,
-        jenis_penilaian: dataNilai.jenis_penilaian || "Harian",
-        nilai: Number(dataNilai.nilai || 0),
-      };
-
-      const { error } = await supabase
-        .from("student_score")
-        .insert([payload]);
-
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      console.error("Gagal memperbarui nilai mata pelajaran:", error);
-      return false;
-    }
-  };
-
-  return (
-    <AppContext.Provider
-      value={{
-        currentUser,
-        setCurrentUser,
-        gurus,
-        siswa,
-        jurnalMengajar,
-        kasusBK,
-        nilaiEkskul,
-        masterPelanggarans,
-        isLoading,
-        addJurnalMengajar,
-        addKasusBK,
-        addNilaiEkskul,
-        addMasterPelanggaran,
-        bulkInsertSiswa,
-        bulkInsertGurus,
-        bulkInsertPelanggaran,
-        updateNilaiSiswa,
-      }}
-    >
-      {children}
-    </AppContext.Provider>
-  );
-};
-
-export const useApp = () => {
-  const context = useContext(AppContext);
-  if (!context) throw new Error("useApp harus digunakan di dalam AppProvider");
-  return context;
-};
