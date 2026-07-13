@@ -23,7 +23,7 @@ interface AppContextType {
     user: { id: string; name: string; role: string } | null,
   ) => void;
   gurus: Guru[];
-  siswa: Siswa[]; // Menggunakan nama siswa agar kompatibel dengan seluruh komponen UI frontend Anda
+  siswa: Siswa[];
   jurnalMengajar: JurnalMengajar[];
   kasusBK: KasusBK[];
   nilaiEkskul: NilaiEkskul[];
@@ -68,67 +68,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const fetchSupabaseData = async () => {
     setIsLoading(true);
     try {
+      // Ambil data dari profiles dan users secara terpisah untuk menjamin 
+      // semua akun guru & admin masuk tanpa tereliminasi masalah join relation.
       const [
         { data: resProfiles },
+        { data: resUsers },
         { data: resStudents },
         { data: resJournals },
         { data: resBkRecords },
         { data: resEkskulScores },
         { data: resMasterPelanggaran },
       ] = await Promise.all([
-        supabase.from("profiles").select(`
-          *,
-          users (
-            id,
-            username,
-            role
-          )
-        `),
-        supabase.from("students").select("*"), // Sesuai nama tabel PostgreSQL Anda
+        supabase.from("profiles").select("*"),
+        supabase.from("users").select("*"),
+        supabase.from("students").select("*"),
         supabase.from("teaching_journals").select("*"),
         supabase.from("bk_records").select("*"), 
         supabase.from("extracurricular_scores").select("*"), 
-        supabase.from("master_pelanggarans").select("*"), // Sesuai skema PostgreSQL Anda
+        supabase.from("master_pelanggarans").select("*"),
       ]);
 
-      if (resProfiles)
-        setGurus(
-          resProfiles.map((p: any) => {
-            const sRoles: SubRoleType[] = ["guru_mapel"];
-            
-            if (p.is_wali_kelas || p.kelas_wali) sRoles.push("wali_kelas");
-            if (p.is_guru_piket) sRoles.push("guru_piket");
-            if (p.nama_ekstrakurikuler) sRoles.push("pembina_ekskul");
-            
-            const dbRole = p.users?.role || p.role;
-            if (p.nama_lengkap?.toLowerCase().includes("bk") || dbRole === "guru_bk")
-              sRoles.push("guru_bk");
+      // Menggabungkan data users dan profiles di frontend (Fallback Safe Client-Side Join)
+      if (resUsers) {
+        const mappedGurus = resUsers.map((u: any) => {
+          // Cari profil yang cocok dengan user_id ini
+          const p = resProfiles?.find((prof: any) => String(prof.user_id) === String(u.id));
+          
+          const sRoles: SubRoleType[] = ["guru_mapel"];
+          
+          if (p?.is_wali_kelas || (p?.kelas_wali && p.kelas_wali !== "-")) sRoles.push("wali_kelas");
+          if (p?.is_guru_piket) sRoles.push("guru_piket");
+          if (p?.nama_ekstrakurikuler) sRoles.push("pembina_ekskul");
+          
+          const determinedRole = u.role || p?.role || "guru";
+          if (determinedRole === "guru_bk" || p?.mapel?.toLowerCase().includes("konseling")) {
+            if (!sRoles.includes("guru_bk")) sRoles.push("guru_bk");
+          }
 
-            const determinedRole = dbRole === "admin" ? "admin" : (dbRole === "guru_bk" ? "guru_bk" : "guru");
-
-            return {
-              id: String(p.id), 
-              user_id: p.user_id ? String(p.user_id) : String(p.id),
-              nip: p.users?.username || p.username || "",
-              username: p.users?.username || p.username || "",
-              name: p.nama_lengkap || p.users?.username || "Tanpa Nama",
-              role: determinedRole, 
-              subRoles: sRoles,
-              kelasWali: p.kelas_wali || null,
-              namaEkskul: p.nama_ekstrakurikuler || null,
-              // Mengambil data dari string kolom p.mapel agar dibaca oleh kolom mata pelajaran UI AdminPanel
-              mata_pelajaran: p.mapel || "Umum", 
-              piketDays: p.piket_days || [],
-            };
-          }),
-        );
+          return {
+            id: p ? String(p.id) : `u-${u.id}`, 
+            user_id: String(u.id),
+            nip: u.username || "",
+            username: u.username || "",
+            name: p?.nama_lengkap || u.username || "Tanpa Nama",
+            role: determinedRole === "admin" ? "admin" : (determinedRole === "guru_bk" ? "guru_bk" : "guru"), 
+            subRoles: sRoles,
+            kelasWali: p?.kelas_wali && p.kelas_wali !== "-" ? p.kelas_wali : null,
+            namaEkskul: p?.nama_ekstrakurikuler || null,
+            mata_pelajaran: p?.mapel || "Umum", // Menggunakan kolom 'mapel' dari data profile Anda
+            piketDays: p?.piket_days || [],
+          };
+        });
+        setGurus(mappedGurus);
+      }
 
       if (resStudents)
         setSiswa(
           resStudents.map((s) => {
-            // SINKRONISASI FORMAT KELAS:
-            // Mengubah otomatis spasi "VIII A" dari database menjadi strip "VIII-A"
-            // agar filter pencarian kelas di panel-panel guru mapel/wali kelas tidak menghasilkan angka 0.
             let formatKelas = s.kelas || "";
             if (formatKelas && !formatKelas.includes("-")) {
               formatKelas = formatKelas.trim().replace(/\s+/g, "-");
@@ -140,7 +136,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               name: s.nama_siswa || "",
               nama_siswa: s.nama_siswa || "",
               jenis_kelamin: s.jenis_kelamin || "",
-              kelas: formatKelas, // Menggunakan format yang seragam dengan tanda hubung (-)
+              kelas: formatKelas,
               statusAbsen: "Hadir",
               ekskul: s.kelas_wali || null,
             };
@@ -246,7 +242,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         {
           user_id: Number(currentUser?.id) || 1,
           student_id: Number(kasus.siswaId),
-          kelas: kasus.kelas.replace("-", " "), // Dikembalikan menjadi format spasi "VIII A" saat disimpan ke PostgreSQL
+          kelas: kasus.kelas.replace("-", " "),
           kategori_kasus: kasus.tipeKasus,
           detail_kasus: kasus.deskripsi,
           tindakan_penanganan: kasus.solusi,
@@ -321,8 +317,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     const payload = siswaList.map((s) => ({
       nisn: s.nisn,
       nama_siswa: s.name,
-      jenis_kelamin: s.jenis_kelamin, // Sesuai tipe jk_enum 'L' atau 'P' di PostgreSQL Anda
-      kelas: s.kelas.replace("-", " "), // Disimpan menggunakan format spasi "VIII A" ke PostgreSQL
+      jenis_kelamin: s.jenis_kelamin, 
+      kelas: s.kelas.replace("-", " "), 
     }));
     const { error } = await supabase
       .from("students") 
@@ -338,7 +334,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       kelas_wali: g.kelasWali,
       is_guru_piket: g.subRoles.includes("guru_piket"),
       nama_ekstrakurikuler: g.namaEkskul,
-      mapel: g.mata_pelajaran, // Disimpan ke kolom mapel pada skema profiles Anda
+      mapel: g.mata_pelajaran, 
     }));
     const { error } = await supabase.from("profiles").insert(payload);
     if (error) throw new Error(error.message);
