@@ -19,7 +19,7 @@ export const GuruMapelPanel: React.FC = () => {
   // State Dinamis Presensi per Siswa (Default: H)
   const [absensi, setAbsensi] = useState<{ [siswaId: string]: string }>({});
   
-  // State Dinamis Jenis Catatan per Siswa (Apresiasi / Pelanggaran)
+  // State Dinamis Jenis Catatan per Siswa (apresiasi / pelanggaran - Sesuai Enum DB)
   const [logTypes, setLogTypes] = useState<{ [siswaId: string]: string }>({});
 
   // State Dinamis Isi Teks Catatan/Kejadian per Siswa
@@ -63,12 +63,12 @@ export const GuruMapelPanel: React.FC = () => {
         status: absensi[s.id] || "H",
       }));
 
-      // 2. Siapkan payload log kejadian khusus siswa (hanya dikirim jika kolom catatan diisi)
+      // 2. Siapkan payload log kejadian khusus siswa (Berdasarkan Enum Murni DB)
       const logsPayload = siswaFilter
         .filter((s) => logNotes[s.id] && logNotes[s.id].trim() !== "")
         .map((s) => ({
           student_id: s.id,
-          jenis_kejadian: logTypes[s.id] || "apresiasi",
+          jenis_kejadian: logTypes[s.id] || "apresiasi", // Murni string 'apresiasi' / 'pelanggaran'
           catatan_kejadian: logNotes[s.id],
         }));
 
@@ -88,9 +88,9 @@ export const GuruMapelPanel: React.FC = () => {
         logsPayload
       );
 
-      alert("Jurnal Mengajar, Absensi, dan Catatan Siswa berhasil disimpan ke database!");
+      alert("Jurnal Mengajar, Absensi, dan Catatan Siswa berhasil disimpan!");
       
-      // Reset State
+      // Reset State Form
       setFormData({ ...formData, kelas: "", jamKe: "", materi: "", aktivitas: "" });
       setAbsensi({});
       setLogTypes({});
@@ -99,7 +99,7 @@ export const GuruMapelPanel: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       alert(`Gagal menyimpan data: ${err.message}`);
-    } medical {
+    } finally {
       setLoading(false);
     }
   };
@@ -145,7 +145,7 @@ export const GuruMapelPanel: React.FC = () => {
 
           {/* Form Utama (Hanya Tampil Saat Tombol Buka Form Diklik) */}
           {formVisible && (
-            <form onSubmit={handleSubmitJurnal} className="space-y-6 animate-fadeIn">
+            <form onSubmit={handleSubmitJurnal} className="space-y-6">
               
               {/* Bagian 2: Detail Pembelajaran */}
               <div className="space-y-3">
@@ -226,7 +226,7 @@ export const GuruMapelPanel: React.FC = () => {
                       <div className="w-1/2 text-right pr-12">Status Absen</div>
                     </div>
 
-                    {/* Loop Baris Siswa (Desain Berdasarkan Screenshot Laravel) */}
+                    {/* Loop Baris Siswa */}
                     <div className="divide-y divide-gray-100 max-h-[500px] overflow-y-auto">
                       {siswaFilter.map((s) => (
                         <div key={s.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-slate-50 transition gap-3">
@@ -236,14 +236,14 @@ export const GuruMapelPanel: React.FC = () => {
                             <span className="text-sm font-bold text-gray-800 block uppercase">{s.name}</span>
                             
                             <div className="flex items-center space-x-2 w-full">
-                              {/* Dropdown Tipe Kejadian KBM */}
+                              {/* Dropdown Tipe Kejadian KBM (Value wajib lowercase steril sesuai Enum Postgres) */}
                               <select
                                 className="border px-2 py-1.5 rounded bg-white text-xs font-semibold border-gray-300 text-gray-700 focus:ring-1 focus:ring-blue-500"
                                 value={logTypes[s.id] || "apresiasi"}
                                 onChange={(e) => handleLogTypeChange(s.id, e.target.value)}
                               >
-                                <option value="apresiasi">👍 Apresiasi</option>
-                                <option value="pelanggaran">⚠️ Pelanggaran</option>
+                                <option value="apresiasi">Apresiasi</option>
+                                <option value="pelanggaran">Pelanggaran</option>
                               </select>
 
                               {/* Kolom Teks Log/Kejadian Khusus KBM */}
@@ -257,7 +257,7 @@ export const GuruMapelPanel: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Sisi Kanan: Status Absensi (Radio Bulat Berwarna) */}
+                          {/* Sisi Kanan: Status Absensi */}
                           <div className="flex items-center justify-start md:justify-end space-x-3 w-full md:w-2/5 pr-4">
                             {[
                               { code: "H", color: "text-green-600 border-green-500 bg-green-50" },
