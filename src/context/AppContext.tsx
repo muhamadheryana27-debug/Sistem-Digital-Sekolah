@@ -122,16 +122,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (resStudents)
         setSiswa(
-          resStudents.map((s) => ({
-            id: String(s.id),
-            nisn: s.nisn || "",
-            name: s.nama_siswa || "", // Digunakan oleh modul absensi/jurnal bawaan asli
-            nama_siswa: s.nama_siswa || "", // PERBAIKAN: Diduplikasi agar terbaca oleh modul Input Nilai Guru
-            jenis_kelamin: s.jenis_kelamin || "",
-            kelas: s.kelas || "",
-            statusAbsen: "Hadir",
-            ekskul: s.kelas_wali || null,
-          })),
+          resStudents.map((s) => {
+            // PERBAIKAN MISMATCH FORMAT KELAS:
+            // Mengubah format kelas spasi dari Excel seperti "VIII A" otomatis menjadi format strip "VIII-A"
+            let formattedKelas = s.kelas || "";
+            if (formattedKelas && !formattedKelas.includes("-")) {
+              formattedKelas = formattedKelas.trim().replace(/\s+/g, "-");
+            }
+
+            return {
+              id: String(s.id),
+              nisn: s.nisn || "",
+              name: s.nama_siswa || "", // Format objek asli[cite: 2]
+              nama_siswa: s.nama_siswa || "", // Format database pendukung
+              jenis_kelamin: s.jenis_kelamin || "",
+              kelas: formattedKelas, // Format yang sudah dinormalisasi dengan strip (-)
+              statusAbsen: "Hadir",
+              ekskul: s.kelas_wali || null,
+            };
+          }),
         );
 
       if (resJournals)
