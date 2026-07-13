@@ -31,7 +31,7 @@ interface AppContextType {
   isLoading: boolean;
 
   // Actions
-  addJurnalMengajar: (jurnal: Omit<JurnalMengajar, "id">, absensi?: any[]) => Promise<void>;
+  addJurnalMengajar: (jurnal: Omit<JurnalMengajar, "id">, absensi: any[], logs: any[]) => Promise<void>;
   addKasusBK: (kasus: Omit<KasusBK, "id">) => Promise<void>;
   addNilaiEkskul: (nilai: Omit<NilaiEkskul, "id">) => Promise<void>;
   addMasterPelanggaran: (
@@ -86,7 +86,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         supabase.from("master_pelanggarans").select("*"),
       ]);
 
-      // 1. Sinkronisasi & Gabung Data Pengguna/Guru (Safe Client-Side Join)
       if (resUsers) {
         const mappedGurus = resUsers.map((u: any) => {
           const p = resProfiles?.find((prof: any) => String(prof.user_id) === String(u.id));
@@ -118,7 +117,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         setGurus(mappedGurus);
       }
 
-      // 2. Sinkronisasi Data Siswa (Mengubah "VIII A" dari DB menjadi "VIII-A" untuk Frontend UI)
       if (resStudents)
         setSiswa(
           resStudents.map((s) => {
@@ -204,10 +202,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     fetchSupabaseData();
   }, []);
 
-  // 3. Simpan Jurnal Baru (Konversi format UI "VIII-A" -> "VIII A" ke PostgreSQL)
-  const addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi: any[] = []) => {
+  // DIUBAH: Mendukung Multi-insert Presensi & Log Catatan Khusus KBM Siswa
+  const addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi: any[], logs: any[]) => {
     const kelasUntukDB = (jurnal.kelas || "").replace("-", " ");
 
+    // 1. Insert Jurnal Utama
     const { data: jurnalData, error: jurnalError } = await supabase
       .from("teaching_journals")
       .insert([
@@ -224,21 +223,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       .single();
 
     if (jurnalError) throw new Error(jurnalError.message);
+    const newJournalId = jurnalData.id;
+
+    // 2. Insert Absensi Siswa massal jika ada
+    if (absensi && absensi.length > 0) {
+      const absensiPayload = absensi.map((abs) => ({
+        teaching_journal_id: newJournalId,
+        student_id: Number(abs.student_id),
+        status: abs.status,
+      }));
+      const { error: absError } = await supabase.from("student_attendances").insert(absensiPayload);
+      if (absError) console.error("Gagal menyimpan absensi siswa:", absError.message);
+    }
+
+    // 3. Insert Log Catatan Khusus KBM Siswa (Apresiasi/Pelanggaran) jika ada isinya
+    if (logs && logs.length > 0) {
+      const logsPayload = logs.map((log) => ({
+        teaching_journal_id: newJournalId,
+        student_id: Number(log.student_id),
+        jenis_kejadian: log.jenis_kejadian,
+        catatan_kejadian: log.catatan_kejadian,
+      }));
+      const { error: logError } = await supabase.from("journal_student_logs").insert(logsPayload);
+      if (logError) console.error("Gagal menyimpan catatan khusus siswa:", logError.message);
+    }
 
     setJurnalMengajar((prev) => [
       ...prev, 
       { 
         ...jurnal, 
-        id: String(jurnalData.id),
+        id: String(newJournalId),
         absensiSiswa: absensi 
       }
     ]);
   };
 
-  // 4. Simpan Kasus BK Baru (Konversi format UI "VIII-A" -> "VIII A" ke PostgreSQL)
   const addKasusBK = async (kasus: Omit<KasusBK, "id">) => {
     const kelasUntukDB = (kasus.kelas || "").replace("-", " ");
-
     const { data, error } = await supabase
       .from("bk_records")
       .insert([
@@ -361,11 +382,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     await fetchSupabaseData();
   };
 
-  // 5. Simpan Nilai Akademik Mapel (Konversi format UI "VIII-A" -> "VIII A" ke PostgreSQL)
   const updateNilaiSiswa = async (siswaId: string, mapel: string, dataNilai: any) => {
     try {
       const kelasUntukDB = (dataNilai.kelas || "").replace("-", " ");
-
       const payload = {
         user_id: Number(currentUser?.id) || 1,
         student_id: Number(siswaId),
