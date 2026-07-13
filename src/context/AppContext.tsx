@@ -12,6 +12,7 @@ import { supabase } from "../lib/supabaseClient";
 export interface MasterPelanggaran {
   id: string;
   kategori: string;
+  jenis_cases?: string;
   jenis_kasus: string;
   bobot: number;
 }
@@ -30,7 +31,7 @@ interface AppContextType {
   isLoading: boolean;
 
   // Actions
-  addJurnalMengajar: (jurnal: Omit<JurnalMengajar, "id">, absensi?: any[]) => Promise<void>;
+  addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi?: any[]) => Promise<void>;
   addKasusBK: (kasus: Omit<KasusBK, "id">) => Promise<void>;
   addNilaiEkskul: (nilai: Omit<NilaiEkskul, "id">) => Promise<void>;
   addMasterPelanggaran: (
@@ -56,8 +57,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     name: string;
     role: string;
   } | null>(null);
-  const [gurus, setGurus] = useState<Guru[]>([]);
-  const [siswa, setSiswa] = useState<Siswa[]>([]);
+  const [gurus, setGurus] = useState<any[]>([]);
+  const [siswa, setSiswa] = useState<any[]>([]);
   const [jurnalMengajar, setJurnalMengajar] = useState<JurnalMengajar[]>([]);
   const [kasusBK, setKasusBK] = useState<KasusBK[]>([]);
   const [nilaiEkskul, setNilaiEkskul] = useState<NilaiEkskul[]>([]);
@@ -77,7 +78,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         { data: resEkskulScores },
         { data: resMasterPelanggaran },
       ] = await Promise.all([
-        // Ditambahkan parameter left join agar data profil tidak hilang jika relasi user_id belum diset di Supabase
         supabase.from("profiles").select(`
           *,
           users (
@@ -100,7 +100,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             
             if (p.is_wali_kelas || p.kelas_wali) sRoles.push("wali_kelas");
             if (p.is_guru_piket) sRoles.push("guru_piket");
-            if (p.nama_ekstrakurikuler) sRoles.push("pembina_ekskul");
+            if (p.nama_ekstrakurikuler || p.nama_ekskul) sRoles.push("pembina_ekskul");
             
             const dbRole = p.users?.role || p.role;
             if (p.nama_lengkap?.toLowerCase().includes("bk") || dbRole === "guru_bk")
@@ -109,14 +109,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             const determinedRole = dbRole === "admin" ? "admin" : (dbRole === "guru_bk" ? "guru_bk" : "guru");
 
             return {
-              id: p.user_id ? String(p.user_id) : String(p.id), 
-              nip: p.users?.username || p.nip || (p.user_id ? String(p.user_id) : ""),
+              id: String(p.id), 
+              user_id: p.user_id ? String(p.user_id) : String(p.id),
+              nip: p.users?.username || p.username || "",
+              username: p.users?.username || p.username || "",
               name: p.nama_lengkap || p.users?.username || "Tanpa Nama",
               role: determinedRole, 
               subRoles: sRoles,
               kelasWali: p.kelas_wali || null,
-              namaEkskul: p.nama_ekstrakurikuler || null,
-              piketDays: [],
+              namaEkskul: p.nama_ekstrakurikuler || p.nama_ekskul || null,
+              mata_pelajaran: p.mata_pelajaran || p.mata_pelajaran_1 || "Umum",
+              piketDays: p.piket_days || [],
             };
           }),
         );
@@ -124,15 +127,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       if (resStudents)
         setSiswa(
           resStudents.map((s) => {
-            // Normalisasi ganda untuk mengantisipasi ketidakcocokan spasi/strip
-            let classWithDash = s.kelas || "";
-            let classWithSpace = s.kelas || "";
-
-            if (classWithDash && !classWithDash.includes("-")) {
-              classWithDash = classWithDash.trim().replace(/\s+/g, "-");
-            }
-            if (classWithSpace && classWithSpace.includes("-")) {
-              classWithSpace = classWithSpace.trim().replace(/-/g, " ");
+            // Mengubah otomatis spasi "VIII A" dari Excel menjadi strip "VIII-A" agar lolos filter panel komponen UI
+            let cleanKelas = s.kelas || "";
+            if (cleanKelas && !cleanKelas.includes("-")) {
+              cleanKelas = cleanKelas.trim().replace(/\s+/g, "-");
             }
 
             return {
@@ -141,10 +139,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               name: s.nama_siswa || "",
               nama_siswa: s.nama_siswa || "",
               jenis_kelamin: s.jenis_kelamin || "",
-              kelas: classWithDash, // Default bermutasi ke strip untuk UI input nilai
-              kelas_spasi: classWithSpace, // Cadangan jika UI Admin memfilter menggunakan spasi
+              kelas: cleanKelas,
               statusAbsen: "Hadir",
-              ekskul: s.kelas_wali || null,
+              ekskul: s.kelas_wali || s.ekskul || null,
             };
           }),
         );
@@ -159,8 +156,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             hari: "",
             kelas: j.kelas || "",
             jamKe: j.jam_ke || "",
-            materi: j.materi_pembelajaran || "", 
-            aktivitas: j.catatan_kelas || "", 
+            materi: j.materi_pembelajaran || j.materi || "", 
+            aktivitas: j.catatan_kelas || j.aktivitas || "", 
             absensiSiswa: [],
           })),
         );
@@ -172,10 +169,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             siswaId: String(k.student_id || ""),
             namaSiswa: k.nama_siswa || `Siswa ID ${k.student_id}`,
             kelas: k.kelas || "",
-            tanggal: k.created_at ? k.created_at.split("T")[0] : (k.crated_at ? k.crated_at.split("T")[0] : ""),
-            tipeKasus: (k.kategori_kasus as any) || "Pelanggaran",
-            deskripsi: k.detail_kasus || "",
-            solusi: k.tindakan_penanganan || "",
+            tanggal: k.created_at ? k.created_at.split("T")[0] : (k.tanggal ? k.tanggal : ""),
+            tipeKasus: k.kategori_kasus || k.kategori_cases || "Pelanggaran",
+            deskripsi: k.detail_kasus || k.deskripsi || "",
+            solusi: k.tindakan_penanganan || k.solusi || "",
             penangananOleh: "Guru BK",
           })),
         );
@@ -188,8 +185,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             namaSiswa: n.nama_siswa || "",
             kelas: n.kelas || "",
             namaEkskul: n.nama_ekskul || "",
-            predikat: (n.nilai_kualitatif as any) || "B",
-            catatan: n.catatan_pembinaan || "",
+            predikat: n.nilai_kualitatif || n.predikat || "B",
+            catatan: n.catatan_pembinaan || n.catatan || "",
           })),
         );
 
@@ -198,7 +195,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
           resMasterPelanggaran.map((m) => ({
             id: String(m.id),
             kategori: m.kategori || "",
-            jenis_kasus: m.jenis_kasus || "",
+            jenis_cases: m.jenis_kasus || m.jenis_cases || "",
+            jenis_kasus: m.jenis_kasus || m.jenis_cases || "",
             bobot: Number(m.bobot || 0),
           })),
         );
@@ -230,19 +228,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       .single();
 
     if (jurnalError) throw new Error(jurnalError.message);
-
-    if (absensi && absensi.length > 0) {
-      const absensiPayload = absensi.map((a) => ({
-        journal_id: jurnalData.id,
-        student_id: Number(a.siswaId),
-        status: a.status,
-      }));
-
-      const { error: absensiError } = await supabase
-        .from("student_attendance")
-        .insert(absensiPayload);
-      if (absensiError) throw new Error(absensiError.message);
-    }
 
     setJurnalMengajar((prev) => [
       ...prev, 
