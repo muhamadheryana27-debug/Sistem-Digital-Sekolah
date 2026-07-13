@@ -77,9 +77,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         { data: resEkskulScores },
         { data: resMasterPelanggaran },
       ] = await Promise.all([
+        // Ditambahkan parameter left join agar data profil tidak hilang jika relasi user_id belum diset di Supabase
         supabase.from("profiles").select(`
           *,
-          users:user_id (
+          users (
             id,
             username,
             role
@@ -109,7 +110,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
 
             return {
               id: p.user_id ? String(p.user_id) : String(p.id), 
-              nip: p.users?.username || (p.user_id ? String(p.user_id) : ""),
+              nip: p.users?.username || p.nip || (p.user_id ? String(p.user_id) : ""),
               name: p.nama_lengkap || p.users?.username || "Tanpa Nama",
               role: determinedRole, 
               subRoles: sRoles,
@@ -123,20 +124,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       if (resStudents)
         setSiswa(
           resStudents.map((s) => {
-            // PERBAIKAN MISMATCH FORMAT KELAS:
-            // Mengubah format kelas spasi dari Excel seperti "VIII A" otomatis menjadi format strip "VIII-A"
-            let formattedKelas = s.kelas || "";
-            if (formattedKelas && !formattedKelas.includes("-")) {
-              formattedKelas = formattedKelas.trim().replace(/\s+/g, "-");
+            // Normalisasi ganda untuk mengantisipasi ketidakcocokan spasi/strip
+            let classWithDash = s.kelas || "";
+            let classWithSpace = s.kelas || "";
+
+            if (classWithDash && !classWithDash.includes("-")) {
+              classWithDash = classWithDash.trim().replace(/\s+/g, "-");
+            }
+            if (classWithSpace && classWithSpace.includes("-")) {
+              classWithSpace = classWithSpace.trim().replace(/-/g, " ");
             }
 
             return {
               id: String(s.id),
               nisn: s.nisn || "",
-              name: s.nama_siswa || "", // Format objek asli[cite: 2]
-              nama_siswa: s.nama_siswa || "", // Format database pendukung
+              name: s.nama_siswa || "",
+              nama_siswa: s.nama_siswa || "",
               jenis_kelamin: s.jenis_kelamin || "",
-              kelas: formattedKelas, // Format yang sudah dinormalisasi dengan strip (-)
+              kelas: classWithDash, // Default bermutasi ke strip untuk UI input nilai
+              kelas_spasi: classWithSpace, // Cadangan jika UI Admin memfilter menggunakan spasi
               statusAbsen: "Hadir",
               ekskul: s.kelas_wali || null,
             };
