@@ -23,7 +23,7 @@ interface AppContextType {
     user: { id: string; name: string; role: string } | null,
   ) => void;
   gurus: Guru[];
-  siswa: Siswa[]; // State frontend tetap menggunakan nama siswa agar tidak merusak komponen UI lain
+  siswa: Siswa[]; // Menggunakan nama siswa agar kompatibel dengan seluruh komponen UI frontend Anda
   jurnalMengajar: JurnalMengajar[];
   kasusBK: KasusBK[];
   nilaiEkskul: NilaiEkskul[];
@@ -84,11 +84,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             role
           )
         `),
-        supabase.from("students").select("*"), // DIUBAH: Menggunakan tabel 'students' sesuai database Anda
+        supabase.from("students").select("*"), // Sesuai nama tabel PostgreSQL Anda
         supabase.from("teaching_journals").select("*"),
         supabase.from("bk_records").select("*"), 
         supabase.from("extracurricular_scores").select("*"), 
-        supabase.from("master_pelanggarans").select("*"), // Sesuai nama di dump SQL Anda
+        supabase.from("master_pelanggarans").select("*"), // Sesuai skema PostgreSQL Anda
       ]);
 
       if (resProfiles)
@@ -116,7 +116,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               subRoles: sRoles,
               kelasWali: p.kelas_wali || null,
               namaEkskul: p.nama_ekstrakurikuler || null,
-              mata_pelajaran: p.mapel || p.mata_pelajaran || "Umum", // Mengambil kolom mapel dari profile Anda
+              // Mengambil data dari string kolom p.mapel agar dibaca oleh kolom mata pelajaran UI AdminPanel
+              mata_pelajaran: p.mapel || "Umum", 
               piketDays: p.piket_days || [],
             };
           }),
@@ -126,7 +127,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         setSiswa(
           resStudents.map((s) => {
             // SINKRONISASI FORMAT KELAS:
-            // Mengubah spasi "VIII A" dari database menjadi strip "VIII-A" agar dibaca oleh komponen UI Frontend
+            // Mengubah otomatis spasi "VIII A" dari database menjadi strip "VIII-A"
+            // agar filter pencarian kelas di panel-panel guru mapel/wali kelas tidak menghasilkan angka 0.
             let formatKelas = s.kelas || "";
             if (formatKelas && !formatKelas.includes("-")) {
               formatKelas = formatKelas.trim().replace(/\s+/g, "-");
@@ -138,7 +140,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               name: s.nama_siswa || "",
               nama_siswa: s.nama_siswa || "",
               jenis_kelamin: s.jenis_kelamin || "",
-              kelas: formatKelas, // Menggunakan format seragam dengan tanda hubung (-)
+              kelas: formatKelas, // Menggunakan format yang seragam dengan tanda hubung (-)
               statusAbsen: "Hadir",
               ekskul: s.kelas_wali || null,
             };
@@ -244,7 +246,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         {
           user_id: Number(currentUser?.id) || 1,
           student_id: Number(kasus.siswaId),
-          kelas: kasus.kelas.replace("-", " "), // Kembalikan ke format spasi untuk DB jika perlu
+          kelas: kasus.kelas.replace("-", " "), // Dikembalikan menjadi format spasi "VIII A" saat disimpan ke PostgreSQL
           kategori_kasus: kasus.tipeKasus,
           detail_kasus: kasus.deskripsi,
           tindakan_penanganan: kasus.solusi,
@@ -319,11 +321,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     const payload = siswaList.map((s) => ({
       nisn: s.nisn,
       nama_siswa: s.name,
-      jenis_kelamin: s.jenis_kelamin,
-      kelas: s.kelas.replace("-", " "), // Simpan format spasi "VIII A" ke database
+      jenis_kelamin: s.jenis_kelamin, // Sesuai tipe jk_enum 'L' atau 'P' di PostgreSQL Anda
+      kelas: s.kelas.replace("-", " "), // Disimpan menggunakan format spasi "VIII A" ke PostgreSQL
     }));
     const { error } = await supabase
-      .from("students") // DIUBAH: Target tabel students
+      .from("students") 
       .upsert(payload, { onConflict: "nisn" });
     if (error) throw new Error(error.message);
     await fetchSupabaseData();
@@ -336,7 +338,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       kelas_wali: g.kelasWali,
       is_guru_piket: g.subRoles.includes("guru_piket"),
       nama_ekstrakurikuler: g.namaEkskul,
-      mapel: g.mata_pelajaran,
+      mapel: g.mata_pelajaran, // Disimpan ke kolom mapel pada skema profiles Anda
     }));
     const { error } = await supabase.from("profiles").insert(payload);
     if (error) throw new Error(error.message);
@@ -370,7 +372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       };
 
       const { error } = await supabase
-        .from("student_scores") // DIUBAH: Sesuai tabel student_scores Anda
+        .from("student_scores") 
         .insert([payload]);
 
       if (error) throw error;
