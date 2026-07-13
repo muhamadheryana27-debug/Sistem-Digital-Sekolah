@@ -2,7 +2,7 @@ import React, { useState, useMemo, FormEvent, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { JurnalMengajar } from '../types';
 import { LIST_KELAS_LENGKAP } from '../utils/kelasHelper';
-import { ArrowLeft, BookOpen, Calendar, GraduationCap, PlusCircle, Save, Check, AlertTriangle, ClipboardList, ThumbsUp, AlertCircle } from 'lucide-react';
+import { ArrowLeft, BookOpen, Calendar, GraduationCap, PlusCircle, Save, Check, AlertTriangle, ClipboardList } from 'lucide-react';
 
 interface GuruMapelPanelProps {
   onBack: () => void;
@@ -25,6 +25,7 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
   
   const [activeSubTab, setActiveSubTab] = useState<'jurnal' | 'nilai'>('jurnal');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formJurnalTerbuka, setFormJurnalTerbuka] = useState(false);
 
   // --- STATE FORM JURNAL MENGAJAR ---
   const [mataPelajaran, setMataPelajaran] = useState('Informatika');
@@ -33,7 +34,7 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
   const [materi, setMateri] = useState('');
   const [aktivitas, setAktivitas] = useState('');
 
-  // --- STATE DINAMIS TABEL PRESENSI & LOG KHUSUS SISWA (Sesuai Laravel) ---
+  // --- STATE PRESENSI & CATATAN KHUSUS SISWA ---
   const [absensi, setAbsensi] = useState<{ [siswaId: string]: string }>({});
   const [logTypes, setLogTypes] = useState<{ [siswaId: string]: string }>({});
   const [logNotes, setLogNotes] = useState<{ [siswaId: string]: string }>({});
@@ -47,7 +48,6 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Otomatisasi Mapel berdasarkan Profile Guru aktif
   useEffect(() => {
     if (currentUser?.mata_pelajaran) {
       setMataPelajaran(currentUser.mata_pelajaran);
@@ -55,7 +55,6 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
     }
   }, [currentUser]);
 
-  // 1. Filter riwayat jurnal berdasarkan akun guru aktif
   const myJurnal = useMemo(() => {
     if (!currentUser) return [];
     return contextJurnal.filter(j => j && String(j.guruId).trim() === String(currentUser.id).trim());
@@ -68,7 +67,6 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
     return Array.from(new Set(mapels));
   }, [myJurnal, currentUser]);
 
-  // Siswa difilter berdasarkan kelas pilihan pada Tab aktif
   const siswaFilterJurnal = useMemo(() => {
     return siswa.filter(s => s && s.kelas === kelasJurnal);
   }, [siswa, kelasJurnal]);
@@ -76,6 +74,15 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
   const filteredSiswa = useMemo(() => {
     return siswa.filter(s => s && s.kelas === kelasNilai);
   }, [siswa, kelasNilai]);
+
+  const handleBukaFormJurnal = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!kelasJurnal) {
+      alert("Silakan pilih rombel belajar terlebih dahulu!");
+      return;
+    }
+    setFormJurnalTerbuka(true);
+  };
 
   const handleStatusChange = (siswaId: string, status: string) => {
     setAbsensi(prev => ({ ...prev, [siswaId]: status }));
@@ -99,11 +106,10 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
     }));
   };
 
-  // Submit Jurnal Mengajar + Absensi + Catatan Khusus Terintegrasi
   const handleJurnalSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!currentUser || !kelasJurnal || !jamKe || !materi) {
-      alert("Mohon lengkapi Detail Pembelajaran (Jam Pelajaran, Kelas, dan Materi)!");
+      alert("Mohon lengkapi Detail Pembelajaran (Jam Pelajaran, Rombel, dan Materi)!");
       return;
     }
 
@@ -114,13 +120,11 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
     try {
       const today = new Date().toISOString().split('T')[0];
       
-      // 1. Payload Absensi
       const absensiPayload = siswaFilterJurnal.map(s => ({
         student_id: s.id,
         status: absensi[s.id] || 'H'
       }));
 
-      // 2. Payload Log Kejadian Khusus (Hanya jika diisi teksnya)
       const logsPayload = siswaFilterJurnal
         .filter(s => logNotes[s.id] && logNotes[s.id].trim() !== '')
         .map(s => ({
@@ -143,15 +147,16 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
         logsPayload
       );
 
-      setSuccessMsg('Jurnal mengajar, absensi, dan catatan khusus siswa berhasil disimpan!');
+      setSuccessMsg('Jurnal mengajar, presensi kelas, dan catatan khusus siswa berhasil disimpan!');
       setMateri('');
       setAktivitas('');
       setAbsensi({});
       setLogNotes({});
+      setFormJurnalTerbuka(false);
       setIsFormOpen(false);
     } catch (err: any) {
       setErrorMsg(err.message || 'Terjadi kesalahan saat menyimpan jurnal.');
-    } medical {
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -180,8 +185,8 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen p-4 md:p-6">
-      {/* Top Heading */}
+    <div className="bg-slate-50 min-h-screen p-1">
+      {/* Top Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition cursor-pointer shadow-sm text-slate-600">
@@ -189,17 +194,16 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
           </button>
           <div>
             <h1 className="text-xl font-bold text-slate-900">Layanan Guru Mata Pelajaran</h1>
-            <p className="text-xs text-slate-500">Administrasi jurnal mengajar, presensi real-time, dan rekap penilaian kelas.</p>
+            <p className="text-xs text-slate-500">Kelola operasional mengajar harian, presensi, dan input capaian nilai siswa.</p>
           </div>
         </div>
 
-        {/* Tab Penyetelan Sub-Menu */}
-        <div className="flex bg-slate-200/70 p-1 rounded-xl border border-slate-300/40 self-start sm:self-auto">
+        <div className="flex bg-slate-200/70 p-1 rounded-xl border border-slate-300/40">
           <button 
             onClick={() => { setActiveSubTab('jurnal'); setSuccessMsg(''); setErrorMsg(''); }}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${activeSubTab === 'jurnal' ? 'bg-white text-sky-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
-            <BookOpen className="w-3.5 h-3.5" /> Jurnal & Absensi
+            <BookOpen className="w-3.5 h-3.5" /> Jurnal Mengajar
           </button>
           <button 
             onClick={() => { setActiveSubTab('nilai'); setSuccessMsg(''); setErrorMsg(''); }}
@@ -210,7 +214,6 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
         </div>
       </div>
 
-      {/* Banner Status Notifikasi */}
       {successMsg && (
         <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3 text-emerald-800 text-xs font-semibold shadow-sm">
           <Check className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -230,43 +233,25 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
           <div className="flex justify-between items-center bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
             <div className="flex items-center gap-2 text-slate-700 font-bold text-sm">
               <Calendar className="w-4 h-4 text-sky-600" />
-              <span>Riwayat Agenda Tatap Muka Jurnal Anda</span>
+              <span>Riwayat Agenda Mengajar Anda</span>
             </div>
             {!isFormOpen && (
-              <button onClick={() => setIsFormOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold text-xs rounded-xl hover:bg-sky-700 transition shadow-sm cursor-pointer">
-                <PlusCircle className="w-4 h-4" /> Input Jurnal & Absensi
+              <button onClick={() => { setIsFormOpen(true); setFormJurnalTerbuka(false); }} className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold text-xs rounded-xl hover:bg-sky-700 transition shadow-sm cursor-pointer">
+                <PlusCircle className="w-4 h-4" /> Buat Jurnal Baru
               </button>
             )}
           </div>
 
           {isFormOpen && (
-            <form onSubmit={handleJurnalSubmit} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                  <PlusCircle className="w-4 h-4 text-sky-600" /> DETAIL PEMBELAJARAN
-                </h3>
-                <button type="button" onClick={() => setIsFormOpen(false)} className="text-xs text-slate-400 hover:text-slate-600 font-medium">Batal</button>
-              </div>
-
-              {/* Baris Atribut Pembelajaran */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Mata Pelajaran</label>
-                  <input
-                    type="text"
-                    className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 cursor-not-allowed"
-                    value={mataPelajaran}
-                    disabled
-                  />
-                </div>
-
-                <div>
+            <div className="space-y-4">
+              {/* Trigger Load Data Siswa (Seksi Pilih Rombel) */}
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-end gap-3">
+                <div className="flex-1">
                   <label className="block text-xs font-bold text-slate-600 mb-1">Pilih Kelas Mengajar</label>
                   <select 
                     value={kelasJurnal} 
-                    onChange={(e) => setKelasJurnal(e.target.value)} 
+                    onChange={(e) => { setKelasJurnal(e.target.value); setFormJurnalTerbuka(false); }} 
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-bold text-slate-700"
-                    required
                   >
                     <option value="">-- Pilih Rombel --</option>
                     {LIST_KELAS_LENGKAP.map(kls => (
@@ -274,120 +259,142 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
                     ))}
                   </select>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Jam Pelajaran Ke-</label>
-                  <input type="text" value={jamKe} onChange={(e) => setJamKe(e.target.value)} placeholder="Contoh: 1-2 atau 3-4" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium text-slate-700" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Materi Pokok Pembelajaran</label>
-                <input type="text" value={materi} onChange={(e) => setMateri(e.target.value)} placeholder="Tuliskan pokok pembahasan materi hari ini..." required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium text-slate-700" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Catatan Hambatan / Aktivitas Umum</label>
-                <textarea value={aktivitas} onChange={(e) => setAktivitas(e.target.value)} rows={2} placeholder="Isi hambatan kelas secara umum atau jalannya penugasan KBM..." className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium text-slate-700" />
-              </div>
-
-              {/* ⚡ INTEGRASI SUB FORM TABLE DAFTAR ABSENSI & CATATAN KHUSUS SISWA (Sesuai Desain Laravel) */}
-              {kelasJurnal && (
-                <div className="border-t border-slate-100 pt-4 space-y-3">
-                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    DAFTAR ABSENSI & CATATAN KHUSUS SISWA ({kelasJurnal})
-                  </h4>
-
-                  {siswaFilterJurnal.length === 0 ? (
-                    <p className="text-xs text-amber-600 italic p-3 bg-amber-50 rounded-xl border border-amber-200">
-                      Tidak ditemukan data records siswa aktif untuk kelas {kelasJurnal}.
-                    </p>
-                  ) : (
-                    <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
-                      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex justify-between items-center text-[10px] font-bold text-slate-500 tracking-wide uppercase">
-                        <div className="w-7/12">Nama Siswa / Kejadian Spesifik</div>
-                        <div className="w-5/12 text-center">Status Absen</div>
-                      </div>
-
-                      <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
-                        {siswaFilterJurnal.map(s => (
-                          <div key={s.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-slate-50/80 transition gap-3">
-                            
-                            {/* Kiri: Nama & Form Catatan Input Interaktif */}
-                            <div className="w-full sm:w-7/12 space-y-1.5">
-                              <span className="text-xs font-bold text-slate-800 uppercase block tracking-wide">{s.name}</span>
-                              <div className="flex items-center gap-2">
-                                <select 
-                                  value={logTypes[s.id] || 'apresiasi'} 
-                                  onChange={(e) => handleLogTypeChange(s.id, e.target.value)}
-                                  className="border border-slate-300 px-2 py-1 rounded bg-white text-[10px] font-bold text-slate-600 focus:ring-1 focus:ring-sky-500"
-                                >
-                                  <option value="apresiasi">👍 Apresiasi</option>
-                                  <option value="pelanggaran">⚠️ Pelanggaran</option>
-                                </select>
-                                <input 
-                                  type="text" 
-                                  value={logNotes[s.id] || ''} 
-                                  onChange={(e) => handleNoteChange(s.id, e.target.value)}
-                                  placeholder="Isi jika siswa presentasi/melanggar..." 
-                                  className="border border-slate-300 px-2.5 py-1 text-[10px] rounded-lg w-full focus:ring-1 focus:ring-sky-500 text-slate-700" 
-                                />
-                              </div>
-                            </div>
-
-                            {/* Kanan: Pilihan Radio Bulat */}
-                            <div className="flex items-center justify-center gap-1.5 w-full sm:w-5/12">
-                              {[
-                                { status: 'H', style: 'text-green-600 border-green-500 bg-green-50' },
-                                { status: 'S', style: 'text-amber-600 border-amber-500 bg-amber-50' },
-                                { status: 'I', style: 'text-blue-600 border-blue-500 bg-blue-50' },
-                                { status: 'A', style: 'text-red-600 border-red-500 bg-red-50' }
-                              ].map(opt => (
-                                <label 
-                                  key={opt.status}
-                                  className={`flex flex-col items-center justify-center border rounded-lg w-10 h-8 cursor-pointer text-[11px] font-bold transition select-none ${
-                                    (absensi[s.id] || 'H') === opt.status 
-                                      ? `${opt.style} border-2 scale-105 shadow-sm` 
-                                      : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
-                                  }`}
-                                >
-                                  <input 
-                                    type="radio" 
-                                    name={`absen-${s.id}`} 
-                                    value={opt.status} 
-                                    checked={(absensi[s.id] || 'H') === opt.status} 
-                                    onChange={() => handleStatusChange(s.id, opt.status)} 
-                                    className="hidden" 
-                                  />
-                                  <span>{opt.status}</span>
-                                </label>
-                              ))}
-                            </div>
-
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button type="button" onClick={() => setIsFormOpen(false)} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl hover:bg-slate-200 transition cursor-pointer">Batal</button>
-                <button type="submit" disabled={isSubmitting || (kelasJurnal && siswaFilterJurnal.length === 0)} className="flex items-center gap-2 px-6 py-2 bg-sky-600 text-white font-bold text-xs rounded-xl hover:bg-sky-700 transition shadow-sm disabled:opacity-50 cursor-pointer">
-                  <Save className="w-3.5 h-3.5" /> {isSubmitting ? 'Menyimpan...' : 'Simpan Jurnal & Absensi'}
+                <button 
+                  type="button" 
+                  onClick={handleBukaFormJurnal}
+                  className="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-sm transition h-[34px]"
+                >
+                  Buka Form
                 </button>
               </div>
-            </form>
+
+              {/* Form Input Detail Pembelajaran & Absensi (Muncul Setelah Klik Buka Form) */}
+              {formJurnalTerbuka && (
+                <form onSubmit={handleJurnalSubmit} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">DETAIL PEMBELAJARAN</h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Mata Pelajaran</label>
+                      <input type="text" className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 cursor-not-allowed" value={mataPelajaran} disabled />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Jam Ke-</label>
+                      <input type="text" value={jamKe} onChange={(e) => setJamKe(e.target.value)} placeholder="Contoh: 1-2" required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium text-slate-700" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Rombel Belajar</label>
+                      <input type="text" className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 cursor-not-allowed" value={kelasJurnal.replace("-", " ")} disabled />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Materi Pokok Pembelajaran</label>
+                    <input type="text" value={materi} onChange={(e) => setMateri(e.target.value)} placeholder="Tuliskan pokok pembahasan materi hari ini..." required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium text-slate-700" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Catatan Hambatan / Aktivitas Umum</label>
+                    <textarea value={aktivitas} onChange={(e) => setAktivitas(e.target.value)} rows={2} placeholder="Ceritakan jalannya KBM, penugasan, atau hambatan jika ada..." className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium text-slate-700" />
+                  </div>
+
+                  {/* DAFTAR ABSENSI & CATATAN KHUSUS SISWA */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">DAFTAR ABSENSI & CATATAN KHUSUS SISWA</h3>
+                    </div>
+
+                    {siswaFilterJurnal.length === 0 ? (
+                      <p className="text-xs text-amber-600 italic p-3 bg-amber-50 rounded-xl border border-amber-200">
+                        Tidak ditemukan data records siswa aktif untuk kelas {kelasJurnal}.
+                      </p>
+                    ) : (
+                      <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+                        <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 text-[10px] font-bold text-slate-500 tracking-wide uppercase flex">
+                          <div className="w-7/12">Nama Siswa / Kejadian Spesifik</div>
+                          <div className="w-5/12 text-center">Status Absen</div>
+                        </div>
+
+                        <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                          {siswaFilterJurnal.map(s => (
+                            <div key={s.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-slate-50/80 transition gap-3">
+                              
+                              <div className="w-full sm:w-7/12 space-y-1.5">
+                                <span className="text-xs font-bold text-slate-800 uppercase block tracking-wide">{s.name}</span>
+                                <div className="flex items-center gap-2">
+                                  <select 
+                                    value={logTypes[s.id] || 'apresiasi'} 
+                                    onChange={(e) => handleLogTypeChange(s.id, e.target.value)}
+                                    className="border border-slate-300 px-2 py-1 rounded bg-white text-[10px] font-bold text-slate-600 focus:ring-1 focus:ring-sky-500"
+                                  >
+                                    <option value="apresiasi">👍 Apresiasi</option>
+                                    <option value="pelanggaran">⚠️ Pelanggaran</option>
+                                  </select>
+                                  <input 
+                                    type="text" 
+                                    value={logNotes[s.id] || ''} 
+                                    onChange={(e) => handleNoteChange(s.id, e.target.value)}
+                                    placeholder="Isi jika siswa presentasi/melanggar..." 
+                                    className="border border-slate-300 px-2.5 py-1 text-[10px] rounded-lg w-full focus:ring-1 focus:ring-sky-500 text-slate-700" 
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-center gap-1.5 w-full sm:w-5/12">
+                                {[
+                                  { status: 'H', style: 'text-green-600 border-green-500 bg-green-50' },
+                                  { status: 'S', style: 'text-amber-600 border-amber-500 bg-amber-50' },
+                                  { status: 'I', style: 'text-blue-600 border-blue-500 bg-blue-50' },
+                                  { status: 'A', style: 'text-red-600 border-red-500 bg-red-50' }
+                                ].map(opt => (
+                                  <label 
+                                    key={opt.status}
+                                    className={`flex flex-col items-center justify-center border rounded-lg w-10 h-8 cursor-pointer text-[11px] font-bold transition select-none ${
+                                      (absensi[s.id] || 'H') === opt.status 
+                                        ? `${opt.style} border-2 scale-105 shadow-sm` 
+                                        : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <input 
+                                      type="radio" 
+                                      name={`absen-${s.id}`} 
+                                      value={opt.status} 
+                                      checked={(absensi[s.id] || 'H') === opt.status} 
+                                      onChange={() => handleStatusChange(s.id, opt.status)} 
+                                      className="hidden" 
+                                    />
+                                    <span>{opt.status}</span>
+                                  </label>
+                                ))}
+                              </div>
+
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button type="button" onClick={() => { setIsFormOpen(false); setFormJurnalTerbuka(false); }} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl hover:bg-slate-200 transition cursor-pointer">Batal</button>
+                    <button type="submit" disabled={isSubmitting || siswaFilterJurnal.length === 0} className="flex items-center gap-2 px-6 py-2 bg-sky-600 text-white font-bold text-xs rounded-xl hover:bg-sky-700 transition shadow-sm disabled:opacity-50 cursor-pointer">
+                      <span>💾</span> {isSubmitting ? 'Menyimpan...' : 'Simpan Jurnal & Catatan Siswa'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
 
-          {/* Data List Riwayat Jurnal */}
+          {/* Riwayat Table View */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             {myJurnal.length === 0 ? (
               <div className="p-12 text-center">
                 <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400"><BookOpen className="w-5 h-5" /></div>
                 <h4 className="text-xs font-bold text-slate-700">Belum Ada Riwayat Jurnal</h4>
-                <p className="text-[11px] text-slate-400 mt-0.5">Seluruh jurnal dan absensi tatap muka terisi akan tersusun rapi di sini.</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Jurnal harian yang Anda simpan akan tampil di dalam daftar ini.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -399,7 +406,7 @@ const GuruMapelPanel: React.FC<GuruMapelPanelProps> = ({ onBack }) => {
                       <th className="p-4">Kelas</th>
                       <th className="p-4">Jam Ke</th>
                       <th className="p-4">Materi Pokok</th>
-                      <th className="p-4">Catatan Hambatan</th>
+                      <th className="p-4">Catatan Aktivitas</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs text-slate-600">
