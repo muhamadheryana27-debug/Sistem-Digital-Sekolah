@@ -68,8 +68,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const fetchSupabaseData = async () => {
     setIsLoading(true);
     try {
-      // Ambil data dari profiles dan users secara terpisah untuk menjamin 
-      // semua akun guru & admin masuk tanpa tereliminasi masalah join relation.
       const [
         { data: resProfiles },
         { data: resUsers },
@@ -88,12 +86,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         supabase.from("master_pelanggarans").select("*"),
       ]);
 
-      // Menggabungkan data users dan profiles di frontend (Fallback Safe Client-Side Join)
+      // 1. Sinkronisasi & Gabung Data Pengguna/Guru (Safe Client-Side Join)
       if (resUsers) {
         const mappedGurus = resUsers.map((u: any) => {
-          // Cari profil yang cocok dengan user_id ini
           const p = resProfiles?.find((prof: any) => String(prof.user_id) === String(u.id));
-          
           const sRoles: SubRoleType[] = ["guru_mapel"];
           
           if (p?.is_wali_kelas || (p?.kelas_wali && p.kelas_wali !== "-")) sRoles.push("wali_kelas");
@@ -115,13 +111,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             subRoles: sRoles,
             kelasWali: p?.kelas_wali && p.kelas_wali !== "-" ? p.kelas_wali : null,
             namaEkskul: p?.nama_ekstrakurikuler || null,
-            mata_pelajaran: p?.mapel || "Umum", // Menggunakan kolom 'mapel' dari data profile Anda
+            mata_pelajaran: p?.mapel || "Umum", 
             piketDays: p?.piket_days || [],
           };
         });
         setGurus(mappedGurus);
       }
 
+      // 2. Sinkronisasi Data Siswa (Mengubah "VIII A" dari DB menjadi "VIII-A" untuk Frontend UI)
       if (resStudents)
         setSiswa(
           resStudents.map((s) => {
@@ -136,7 +133,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               name: s.nama_siswa || "",
               nama_siswa: s.nama_siswa || "",
               jenis_kelamin: s.jenis_kelamin || "",
-              kelas: formatKelas,
+              kelas: formatKelas, 
               statusAbsen: "Hadir",
               ekskul: s.kelas_wali || null,
             };
@@ -207,13 +204,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     fetchSupabaseData();
   }, []);
 
+  // 3. Simpan Jurnal Baru (Konversi format UI "VIII-A" -> "VIII A" ke PostgreSQL)
   const addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi: any[] = []) => {
+    const kelasUntukDB = (jurnal.kelas || "").replace("-", " ");
+
     const { data: jurnalData, error: jurnalError } = await supabase
       .from("teaching_journals")
       .insert([
         {
           user_id: Number(jurnal.guruId) || null,
-          kelas: jurnal.kelas,
+          kelas: kelasUntukDB, 
           mata_pelajaran: jurnal.guruName, 
           jam_ke: jurnal.jamKe,
           materi_pembelajaran: jurnal.materi, 
@@ -235,14 +235,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     ]);
   };
 
+  // 4. Simpan Kasus BK Baru (Konversi format UI "VIII-A" -> "VIII A" ke PostgreSQL)
   const addKasusBK = async (kasus: Omit<KasusBK, "id">) => {
+    const kelasUntukDB = (kasus.kelas || "").replace("-", " ");
+
     const { data, error } = await supabase
       .from("bk_records")
       .insert([
         {
           user_id: Number(currentUser?.id) || 1,
           student_id: Number(kasus.siswaId),
-          kelas: kasus.kelas.replace("-", " "),
+          kelas: kelasUntukDB, 
           kategori_kasus: kasus.tipeKasus,
           detail_kasus: kasus.deskripsi,
           tindakan_penanganan: kasus.solusi,
@@ -251,6 +254,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       ])
       .select()
       .single();
+      
     if (error) throw new Error(error.message);
     
     const targetSiswa = siswa.find((s) => s.id === kasus.siswaId);
@@ -278,6 +282,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       ])
       .select()
       .single();
+
     if (error) throw new Error(error.message);
 
     const targetSiswa = siswa.find((s) => s.id === nilai.siswaId);
@@ -356,12 +361,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     await fetchSupabaseData();
   };
 
+  // 5. Simpan Nilai Akademik Mapel (Konversi format UI "VIII-A" -> "VIII A" ke PostgreSQL)
   const updateNilaiSiswa = async (siswaId: string, mapel: string, dataNilai: any) => {
     try {
+      const kelasUntukDB = (dataNilai.kelas || "").replace("-", " ");
+
       const payload = {
         user_id: Number(currentUser?.id) || 1,
         student_id: Number(siswaId),
-        kelas: (dataNilai.kelas || "").replace("-", " "),
+        kelas: kelasUntukDB, 
         mapel: mapel,
         jenis_penilaian: dataNilai.jenis_penilaian || "Harian",
         nilai: Number(dataNilai.nilai || 0),
