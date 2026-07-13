@@ -12,7 +12,6 @@ import { supabase } from "../lib/supabaseClient";
 export interface MasterPelanggaran {
   id: string;
   kategori: string;
-  jenis_cases?: string;
   jenis_kasus: string;
   bobot: number;
 }
@@ -110,8 +109,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             subRoles: sRoles,
             kelasWali: p?.kelas_wali && p.kelas_wali !== "-" ? p.kelas_wali : null,
             namaEkskul: p?.nama_ekstrakurikuler || null,
-            mata_pelajaran: p?.mapel || "Umum", 
-            piketDays: p?.piket_days || [],
+            mata_pelajaran: p?.mapel || "Informatika", 
+            piketDays: [],
           };
         });
         setGurus(mappedGurus);
@@ -120,6 +119,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       if (resStudents)
         setSiswa(
           resStudents.map((s) => {
+            // FIX KELAS: Ubah spasi database "VIII A" menjadi strip "VIII-A" agar dibaca filter UI
             let formatKelas = s.kelas || "";
             if (formatKelas && !formatKelas.includes("-")) {
               formatKelas = formatKelas.trim().replace(/\s+/g, "-");
@@ -202,11 +202,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     fetchSupabaseData();
   }, []);
 
-  // DIUBAH: Mendukung Multi-insert Presensi & Log Catatan Khusus KBM Siswa
   const addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi: any[], logs: any[]) => {
     const kelasUntukDB = (jurnal.kelas || "").replace("-", " ");
 
-    // 1. Insert Jurnal Utama
     const { data: jurnalData, error: jurnalError } = await supabase
       .from("teaching_journals")
       .insert([
@@ -225,18 +223,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     if (jurnalError) throw new Error(jurnalError.message);
     const newJournalId = jurnalData.id;
 
-    // 2. Insert Absensi Siswa massal jika ada
     if (absensi && absensi.length > 0) {
       const absensiPayload = absensi.map((abs) => ({
         teaching_journal_id: newJournalId,
         student_id: Number(abs.student_id),
         status: abs.status,
       }));
-      const { error: absError } = await supabase.from("student_attendances").insert(absensiPayload);
-      if (absError) console.error("Gagal menyimpan absensi siswa:", absError.message);
+      await supabase.from("student_attendances").insert(absensiPayload);
     }
 
-    // 3. Insert Log Catatan Khusus KBM Siswa (Apresiasi/Pelanggaran) jika ada isinya
     if (logs && logs.length > 0) {
       const logsPayload = logs.map((log) => ({
         teaching_journal_id: newJournalId,
@@ -244,8 +239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         jenis_kejadian: log.jenis_kejadian,
         catatan_kejadian: log.catatan_kejadian,
       }));
-      const { error: logError } = await supabase.from("journal_student_logs").insert(logsPayload);
-      if (logError) console.error("Gagal menyimpan catatan khusus siswa:", logError.message);
+      await supabase.from("journal_student_logs").insert(logsPayload);
     }
 
     setJurnalMengajar((prev) => [
