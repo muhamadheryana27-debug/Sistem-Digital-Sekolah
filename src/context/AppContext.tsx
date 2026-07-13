@@ -1,193 +1,388 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import React, { createContext, useContext, useState, useEffect } from "react";
+import {
+  Guru,
+  Siswa,
+  JurnalMengajar,
+  KasusBK,
+  NilaiEkskul,
+  SubRoleType,
+} from "../types";
+import { supabase } from "../lib/supabaseClient";
+
+export interface MasterPelanggaran {
+  id: string;
+  kategori: string;
+  jenis_kasus: string;
+  bobot: number;
+}
 
 interface AppContextType {
-  siswa: any[];
-  users: any[];
-  profiles: any[];
-  masterPelanggaran: any[];
-  bkRecords: any[];
-  studentScores: any[];
-  loading: boolean;
-  currentUser: any | null; // Ditambahkan untuk menampung user login saat ini
+  currentUser: { id: string; name: string; role: string } | null;
+  setCurrentUser: (
+    user: { id: string; name: string; role: string } | null,
+  ) => void;
+  gurus: Guru[];
+  siswa: Siswa[];
+  jurnalMengajar: JurnalMengajar[];
+  kasusBK: KasusBK[];
+  nilaiEkskul: NilaiEkskul[];
+  masterPelanggarans: MasterPelanggaran[];
+  isLoading: boolean;
 
-  // Fungsi Otentikasi & Sesi
-  login: (username: string, password: string) => Promise<any>;
-  logout: () => void;
-  setCurrentUser: (user: any) => void;
+  // Actions
+  addJurnalMengajar: (jurnal: Omit<JurnalMengajar, "id">, absensi?: any[]) => Promise<void>;
+  addKasusBK: (kasus: Omit<KasusBK, "id">) => Promise<void>;
+  addNilaiEkskul: (nilai: Omit<NilaiEkskul, "id">) => Promise<void>;
+  addMasterPelanggaran: (
+    pelanggaran: Omit<MasterPelanggaran, "id">,
+  ) => Promise<void>;
+  bulkInsertSiswa: (siswaList: Omit<Siswa, "id">[]) => Promise<void>;
+  bulkInsertGurus: (guruList: Omit<Guru, "id">[]) => Promise<void>;
+  bulkInsertPelanggaran: (
+    list: Omit<MasterPelanggaran, "id">[],
+  ) => Promise<void>;
   
-  // Fungsi Aksi Modul (CRUD Supabase)
-  fetchSiswa: () => Promise<void>;
-  addSiswa: (data: any) => Promise<void>;
-  updateSiswa: (id: string, data: any) => Promise<void>;
-  deleteSiswa: (id: string) => Promise<void>;
-  
-  addBkRecord: (record: any) => Promise<void>;
-  updateBkStatus: (id: string, status: string) => Promise<void>;
-  addSesiLanjut: (sesiData: any) => Promise<void>;
-  
-  inputNilai: (nilaiData: any) => Promise<void>;
+  // Aksi penanganan nilai akademik mata pelajaran siswa (student_score)
+  updateNilaiSiswa: (siswaId: string, mapel: string, dataNilai: any) => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [siswa, setSiswa] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [masterPelanggaran, setMasterPelanggaran] = useState<any[]>([]);
-  const [bkRecords, setBkRecords] = useState<any[]>([]);
-  const [studentScores, setStudentScores] = useState<any[]>([]);
-  const [currentUser, setCurrentUserState] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // Fungsi untuk melacak user login lokal
-  const setCurrentUser = (user: any) => {
-    setCurrentUserState(user);
-    if (user) {
-      localStorage.setItem('sigap_user', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('sigap_user');
-    }
-  };
-
-  // 1. Fungsi Fetching Data dari Supabase
-  const fetchSiswa = async () => {
-    const { data } = await supabase.from('siswa').select('*');
-    if (data) setSiswa(data);
-  };
-
-  const refreshAllData = async () => {
-    setLoading(true);
-    await fetchSiswa();
-    
-    const { data: userData } = await supabase.from('user').select('*');
-    const { data: profileData } = await supabase.from('profiles').select('*');
-    const { data: mpData } = await supabase.from('master-pelanggarans').select('*');
-    const { data: bkData } = await supabase.from('bk_records').select('*');
-    const { data: scoreData } = await supabase.from('student_score').select('*');
-
-    if (userData) setUsers(userData);
-    if (profileData) setProfiles(profileData);
-    if (mpData) setMasterPelanggaran(mpData);
-    if (bkData) setBkRecords(bkData);
-    if (scoreData) setStudentScores(scoreData);
-    
-    // Cek session lokal saat refresh halaman
-    const savedUser = localStorage.getItem('sigap_user');
-    if (savedUser) {
-      setCurrentUserState(JSON.parse(savedUser));
-    }
-
-    setLoading(false);
-  };
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  // Mempertahankan struktur object login asli agar Halaman Login tidak crash
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    name: string;
+    role: string;
+  } | null>(null);
+  
+  const [gurus, setGurus] = useState<Guru[]>([]);
+  const [siswa, setSiswa] = useState<Siswa[]>([]);
+  const [jurnalMengajar, setJurnalMengajar] = useState<JurnalMengajar[]>([]);
+  const [kasusBK, setKasusBK] = useState<KasusBK[]>([]);
+  const [nilaiEkskul, setNilaiEkskul] = useState<NilaiEkskul[]>([]);
+  const [masterPelanggarans, setMasterPelanggarans] = useState<MasterPelanggaran[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    refreshAllData();
+    const fetchSupabaseData = async () => {
+      setIsLoading(true);
+      try {
+        // DISELARASKAN DENGAN STRUKTUR DATABASE BARU ANDA
+        const [
+          { data: resProfiles },
+          { data: resStudents },
+          { data: resJournals },
+          { data: resBkRecords },
+          { data: resEkskulScores },
+          { data: resMasterPelanggaran },
+        ] = await Promise.all([
+          supabase.from("profiles").select("*"),
+          supabase.from("siswa").select("*"), // Diubah dari 'students' -> 'siswa'
+          supabase.from("teaching_journals").select("*"),
+          supabase.from("bk_records").select("*"), 
+          supabase.from("extracurricular_scores").select("*"), 
+          supabase.from("master-pelanggarans").select("*"), // Diubah dari 'master_pelanggarans' -> 'master-pelanggarans'
+        ]);
+
+        if (resProfiles)
+          setGurus(
+            resProfiles.map((p) => {
+              const sRoles: SubRoleType[] = ["guru_mapel"];
+              
+              if (p.is_wali_kelas || p.kelas_wali) sRoles.push("wali_kelas");
+              if (p.is_guru_piket) sRoles.push("guru_piket");
+              if (p.nama_ekstrakurikuler) sRoles.push("pembina_ekskul");
+              if (p.nama_lengkap?.toLowerCase().includes("bk") || p.role === "guru_bk")
+                sRoles.push("guru_bk");
+
+              const determinedRole = p.role === "admin" ? "admin" : (p.role === "guru_bk" ? "guru_bk" : "guru");
+
+              return {
+                id: p.user_id ? String(p.user_id) : String(p.id), 
+                nip: p.user_id ? String(p.user_id) : "",
+                name: p.nama_lengkap || "",
+                role: determinedRole, 
+                subRoles: sRoles,
+                kelasWali: p.kelas_wali || null,
+                namaEkskul: p.nama_ekstrakurikuler || null,
+                piketDays: [],
+              };
+            }),
+          );
+
+        if (resStudents)
+          setSiswa(
+            resStudents.map((s) => ({
+              id: String(s.id),
+              nisn: s.nisn || "",
+              name: s.nama_siswa || "", // Disesuaikan kolom baru: nama_siswa
+              kelas: s.kelas || "",
+              statusAbsen: "Hadir",
+              ekskul: s.kelas_wali || null, 
+            })),
+          );
+
+        if (resJournals)
+          setJurnalMengajar(
+            resJournals.map((j) => ({
+              id: String(j.id),
+              guruId: String(j.user_id || ""),
+              guruName: j.mata_ajaran || j.mata_pelajaran || "", 
+              tanggal: j.tanggal || j.created_at?.split("T")[0] || new Date().toISOString().split("T")[0],
+              hari: "",
+              kelas: j.kelas || "",
+              jamKe: j.jam_ke || "",
+              materi: j.materi_pembelajaran || "", 
+              aktivitas: j.catatan_kelas || "", 
+              absensiSiswa: [],
+            })),
+          );
+
+        if (resBkRecords)
+          setKasusBK(
+            resBkRecords.map((k: any) => ({
+              id: String(k.id),
+              siswaId: String(k.student_id || ""),
+              namaSiswa: k.nama_siswa || `Siswa ID ${k.student_id}`, // Disesuaikan skema baru bk_records
+              kelas: k.kelas || "",
+              tanggal: k.created_at ? k.created_at.split("T")[0] : (k.crated_at ? k.crated_at.split("T")[0] : ""),
+              tipeKasus: (k.kategori_kasus as any) || "Pelanggaran",
+              deskripsi: k.detail_kasus || "",
+              solusi: k.tindakan_penanganan || "",
+              penangananOleh: "Guru BK",
+            })),
+          );
+
+        if (resEkskulScores)
+          setNilaiEkskul(
+            resEkskulScores.map((n: any) => ({
+              id: String(n.id),
+              siswaId: String(n.student_id || ""),
+              namaSiswa: n.nama_siswa || "",
+              kelas: n.kelas || "",
+              namaEkskul: n.nama_ekskul || "",
+              predikat: (n.nilai_kualitatif as any) || "B",
+              catatan: n.catatan_pembinaan || "",
+            })),
+          );
+
+        if (resMasterPelanggaran)
+          setMasterPelanggarans(
+            resMasterPelanggaran.map((m) => ({
+              id: String(m.id),
+              kategori: m.kategori || "",
+              jenis_kasus: m.jenis_kasus || "",
+              bobot: Number(m.bobot || 0),
+            })),
+          );
+      } catch (err) {
+        console.error("Gagal melakukan sinkronisasi data Supabase:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSupabaseData();
   }, []);
 
-  // 2. Logika Otentikasi Halaman Login ke Supabase
-  const login = async (username: string, password: string) => {
-    // Mencari ketersediaan akun di tabel 'user' Supabase sesuai input
-    const { data: userRow, error } = await supabase
-      .from('user')
-      .select('*')
-      .eq('username', username)
-      .eq('password', password)
+  const addJurnalMengajar = async (jurnal: Omit<JurnalMengajar, "id">, absensi: any[] = []) => {
+    const { data: jurnalData, error: jurnalError } = await supabase
+      .from("teaching_journals")
+      .insert([
+        {
+          user_id: Number(jurnal.guruId) || null,
+          kelas: jurnal.kelas,
+          mata_pelajaran: jurnal.guruName, 
+          jam_ke: jurnal.jamKe,
+          materi_pembelajaran: jurnal.materi, 
+          catatan_kelas: jurnal.aktivitas, 
+        },
+      ])
+      .select()
       .single();
 
-    if (error || !userRow) {
-      throw new Error('Username atau Password salah!');
+    if (jurnalError) throw new Error(jurnalError.message);
+
+    if (absensi && absensi.length > 0) {
+      const absensiPayload = absensi.map((a) => ({
+        journal_id: jurnalData.id,
+        student_id: Number(a.siswaId),
+        status: a.status,
+      }));
+
+      const { error: absensiError } = await supabase
+        .from("student_attendance")
+        .insert(absensiPayload);
+      if (absensiError) throw new Error(absensiError.message);
     }
 
-    // Ambil profil pelengkap jika ada
-    const { data: profileRow } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userRow.id)
+    setJurnalMengajar((prev) => [
+      ...prev, 
+      { 
+        ...jurnal, 
+        id: String(jurnalData.id),
+        absensiSiswa: absensi 
+      }
+    ]);
+  };
+
+  const addKasusBK = async (kasus: Omit<KasusBK, "id">) => {
+    const { data, error } = await supabase
+      .from("bk_records")
+      .insert([
+        {
+          student_id: Number(kasus.siswaId),
+          kelas: kasus.kelas,
+          kategori_kasus: kasus.tipeKasus,
+          detail_kasus: kasus.deskripsi,
+          tindakan_penanganan: kasus.solusi,
+          status: "Selesai",
+        },
+      ])
+      .select()
       .single();
-
-    const fullUserData = { ...userRow, profile: profileRow || null };
-    setCurrentUser(fullUserData);
-    return fullUserData;
-  };
-
-  const logout = () => {
-    setCurrentUser(null);
-  };
-
-  // 3. Aksi Modul Siswa (Admin Panel)
-  const addSiswa = async (dataSiswa: any) => {
-    const { error } = await supabase.from('siswa').insert([dataSiswa]);
-    if (error) throw error;
-    await fetchSiswa();
-  };
-
-  const updateSiswa = async (id: string, dataUpdated: any) => {
-    const { error } = await supabase.from('siswa').update(dataUpdated).eq('id', id);
-    if (error) throw error;
-    await fetchSiswa();
-  };
-
-  const deleteSiswa = async (id: string) => {
-    const { error } = await supabase.from('siswa').delete().eq('id', id);
-    if (error) throw error;
-    await fetchSiswa();
-  };
-
-  // 4. Aksi Modul Bimbingan Konseling (BK Panel & PKS Kesiswaan)
-  const addBkRecord = async (record: any) => {
-    const { error } = await supabase.from('bk_records').insert([record]);
-    if (error) throw error;
+    if (error) throw new Error(error.message);
     
-    const { data } = await supabase.from('bk_records').select('*');
-    if (data) setBkRecords(data);
+    const targetSiswa = siswa.find((s) => s.id === kasus.siswaId);
+    setKasusBK((prev) => [
+      ...prev, 
+      { 
+        ...kasus, 
+        id: String(data.id),
+        namaSiswa: targetSiswa ? targetSiswa.name : kasus.namaSiswa 
+      }
+    ]);
   };
 
-  const updateBkStatus = async (id: string, statusBaru: string) => {
-    const { error } = await supabase.from('bk_records').update({ status: statusBaru }).eq('id', id);
-    if (error) throw error;
-    
-    const { data } = await supabase.from('bk_records').select('*');
-    if (data) setBkRecords(data);
+  const addNilaiEkskul = async (nilai: Omit<NilaiEkskul, "id">) => {
+    const { data, error } = await supabase
+      .from("extracurricular_scores")
+      .insert([
+        {
+          student_id: Number(nilai.siswaId),
+          nama_ekskul: nilai.namaEkskul,
+          nilai_kualitatif: nilai.predikat,
+          catatan_pembinaan: nilai.catatan,
+        },
+      ])
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+
+    const targetSiswa = siswa.find((s) => s.id === nilai.siswaId);
+    setNilaiEkskul((prev) => [
+      ...prev, 
+      { 
+        ...nilai, 
+        id: String(data.id),
+        namaSiswa: targetSiswa ? targetSiswa.name : nilai.namaSiswa,
+        kelas: targetSiswa ? targetSiswa.kelas : nilai.kelas 
+      }
+    ]);
   };
 
-  const addSesiLanjut = async (sesiData: any) => {
-    const { error } = await supabase.from('bk_sesi_lanjut').insert([sesiData]);
-    if (error) throw error;
+  const addMasterPelanggaran = async (
+    pelanggaran: Omit<MasterPelanggaran, "id">,
+  ) => {
+    const { data, error } = await supabase
+      .from("master-pelanggarans")
+      .insert([
+        {
+          kategori: pelanggaran.kategori,
+          jenis_kasus: pelanggaran.jenis_kasus,
+          bobot: Number(pelanggaran.bobot),
+        },
+      ])
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    setMasterPelanggarans((prev) => [
+      ...prev,
+      { ...pelanggaran, id: String(data.id) },
+    ]);
   };
 
-  // 5. Aksi Modul Penilaian (Guru Mapel Panel / Wali Kelas)
-  const inputNilai = async (nilaiData: any) => {
-    const { error } = await supabase.from('student_score').insert([nilaiData]);
-    if (error) throw error;
+  const bulkInsertSiswa = async (siswaList: Omit<Siswa, "id">[]) => {
+    const payload = siswaList.map((s) => ({
+      nama_siswa: s.name, // Disesuaikan nama_siswa
+      kelas: s.kelas,
+    }));
+    const { error } = await supabase.from("siswa").insert(payload);
+    if (error) throw new Error(error.message);
+  };
 
-    const { data } = await supabase.from('student_score').select('*');
-    if (data) setStudentScores(data);
+  const bulkInsertGurus = async (guruList: Omit<Guru, "id">[]) => {
+    const payload = guruList.map((g) => ({
+      nama_lengkap: g.name,
+      is_wali_kelas: g.subRoles.includes("wali_kelas"),
+      kelas_wali: g.kelasWali,
+      is_guru_piket: g.subRoles.includes("guru_piket"),
+      nama_ekstrakurikuler: g.namaEkskul,
+    }));
+    const { error } = await supabase.from("profiles").insert(payload);
+    if (error) throw new Error(error.message);
+  };
+
+  const bulkInsertPelanggaran = async (
+    list: Omit<MasterPelanggaran, "id">[],
+  ) => {
+    const payload = list.map((l) => ({
+      kategori: l.kategori,
+      jenis_kasus: l.jenis_kasus,
+      bobot: Number(l.bobot),
+    }));
+    const { error } = await supabase
+      .from("master-pelanggarans")
+      .insert(payload);
+    if (error) throw new Error(error.message);
+  };
+
+  // DIHUBUNGKAN KE TABEL BARU ANDA: student_score
+  const updateNilaiSiswa = async (siswaId: string, mapel: string, dataNilai: any) => {
+    try {
+      const payload = {
+        student_id: Number(siswaId),
+        kelas: dataNilai.kelas || "",
+        mapel: mapel,
+        jenis_penilaian: dataNilai.jenis_penilaian || "Harian",
+        nilai: Number(dataNilai.nilai || 0),
+      };
+
+      const { error } = await supabase
+        .from("student_score")
+        .insert([payload]);
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error("Gagal memperbarui nilai mata pelajaran:", error);
+      return false;
+    }
   };
 
   return (
     <AppContext.Provider
       value={{
-        siswa,
-        users,
-        profiles,
-        masterPelanggaran,
-        bkRecords,
-        studentScores,
-        loading,
         currentUser,
-        login,
-        logout,
         setCurrentUser,
-        fetchSiswa,
-        addSiswa,
-        updateSiswa,
-        deleteSiswa,
-        addBkRecord,
-        updateBkStatus,
-        addSesiLanjut,
-        inputNilai,
+        gurus,
+        siswa,
+        jurnalMengajar,
+        kasusBK,
+        nilaiEkskul,
+        masterPelanggarans,
+        isLoading,
+        addJurnalMengajar,
+        addKasusBK,
+        addNilaiEkskul,
+        addMasterPelanggaran,
+        bulkInsertSiswa,
+        bulkInsertGurus,
+        bulkInsertPelanggaran,
+        updateNilaiSiswa,
       }}
     >
       {children}
@@ -197,6 +392,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const useApp = () => {
   const context = useContext(AppContext);
-  if (!context) throw new Error('useApp must be used within AppProvider');
+  if (!context) throw new Error("useApp harus digunakan di dalam AppProvider");
   return context;
 };
