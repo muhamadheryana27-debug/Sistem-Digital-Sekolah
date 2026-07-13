@@ -5,224 +5,319 @@ import { LIST_KELAS_LENGKAP } from "../utils/kelasHelper";
 export const GuruMapelPanel: React.FC = () => {
   const { currentUser, siswa, addJurnalMengajar } = useApp();
   const [loading, setLoading] = useState(false);
+  const [formVisible, setFormVisible] = useState(false);
 
-  // State Form Jurnal
+  // State Utama Form Jurnal
   const [formData, setFormData] = useState({
-    mataPelajaran: currentUser?.mata_pelajaran || "",
+    mataPelajaran: currentUser?.mata_pelajaran || "Informatika",
     kelas: "",
     jamKe: "",
     materi: "",
     aktivitas: "",
   });
 
-  // State Absensi Siswa di kelas yang terpilih
+  // State Dinamis Presensi per Siswa (Default: H)
   const [absensi, setAbsensi] = useState<{ [siswaId: string]: string }>({});
+  
+  // State Dinamis Jenis Catatan per Siswa (Apresiasi / Pelanggaran)
+  const [logTypes, setLogTypes] = useState<{ [siswaId: string]: string }>({});
 
-  // Filter siswa berdasarkan kelas yang dipilih di UI (format dengan strip, e.g., "VIII-A")
+  // State Dinamis Isi Teks Catatan/Kejadian per Siswa
+  const [logNotes, setLogNotes] = useState<{ [siswaId: string]: string }>({});
+
+  // Siswa difilter berdasarkan drop-down kelas yang dipilih
   const siswaFilter = siswa.filter((s) => s.kelas === formData.kelas);
 
   const handleStatusChange = (siswaId: string, status: string) => {
     setAbsensi((prev) => ({ ...prev, [siswaId]: status }));
   };
 
+  const handleLogTypeChange = (siswaId: string, type: string) => {
+    setLogTypes((prev) => ({ ...prev, [siswaId]: type }));
+  };
+
+  const handleNoteChange = (siswaId: string, text: string) => {
+    setLogNotes((prev) => ({ ...prev, [siswaId]: text }));
+  };
+
+  const handleBukaForm = () => {
+    if (!formData.kelas) {
+      alert("Silakan pilih kelas terlebih dahulu!");
+      return;
+    }
+    setFormVisible(true);
+  };
+
   const handleSubmitJurnal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.kelas || !formData.jamKe || !formData.materi) {
-      alert("Mohon lengkapi data Kelas, Jam Pelajaran, dan Materi Pokok!");
+      alert("Mohon lengkapi Detail Pembelajaran (Jam Pelajaran, Rombel, dan Materi)!");
       return;
     }
 
     setLoading(true);
     try {
-      // Susun data absensi untuk dikirim ke action context
+      // 1. Siapkan payload absensi siswa
       const absensiPayload = siswaFilter.map((s) => ({
         student_id: s.id,
-        status: absensi[s.id] || "H", // Default 'H' (Hadir) jika tidak diubah
+        status: absensi[s.id] || "H",
       }));
 
+      // 2. Siapkan payload log kejadian khusus siswa (hanya dikirim jika kolom catatan diisi)
+      const logsPayload = siswaFilter
+        .filter((s) => logNotes[s.id] && logNotes[s.id].trim() !== "")
+        .map((s) => ({
+          student_id: s.id,
+          jenis_kejadian: logTypes[s.id] || "apresiasi",
+          catatan_kejadian: logNotes[s.id],
+        }));
+
+      // 3. Panggil action context untuk eksekusi Supabase
       await addJurnalMengajar(
         {
           guruId: currentUser?.id || "",
           guruName: formData.mataPelajaran,
-          kelas: formData.kelas, // Kirim format "VIII-A", AppContext akan otomatis mengubah ke "VIII A" untuk DB
+          kelas: formData.kelas,
           jamKe: formData.jamKe,
           materi: formData.materi,
           aktivitas: formData.aktivitas,
           tanggal: new Date().toISOString().split("T")[0],
           hari: "",
         },
-        absensiPayload
+        absensiPayload,
+        logsPayload
       );
 
-      alert("Jurnal Mengajar dan Absensi berhasil disimpan!");
-      // Reset Form kecuali Mata Pelajaran
-      setFormData({
-        ...formData,
-        kelas: "",
-        jamKe: "",
-        materi: "",
-        aktivitas: "",
-      });
+      alert("Jurnal Mengajar, Absensi, dan Catatan Siswa berhasil disimpan ke database!");
+      
+      // Reset State
+      setFormData({ ...formData, kelas: "", jamKe: "", materi: "", aktivitas: "" });
       setAbsensi({});
+      setLogTypes({});
+      setLogNotes({});
+      setFormVisible(false);
     } catch (err: any) {
       console.error(err);
-      alert(`Gagal menyimpan jurnal: ${err.message}`);
-    } finally {
+      alert(`Gagal menyimpan data: ${err.message}`);
+    } medical {
       setLoading(false);
     }
   };
 
   return (
-    <div className="p-6 bg-white rounded-lg shadow-md max-w-5xl mx-auto">
-      <h2 className="text-xl font-bold mb-4 text-blue-900">
-        Form Input Jurnal Mengajar & Presensi Siswa
-      </h2>
-      
-      <form onSubmit={handleSubmitJurnal} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Mata Pelajaran */}
-          <div className="flex flex-col">
-            <label className="text-sm font-semibold mb-1">Mata Pelajaran</label>
-            <input
-              type="text"
-              className="border p-2 rounded-md bg-gray-100 cursor-not-allowed"
-              value={formData.mataPelajaran}
-              disabled
-            />
-          </div>
+    <div className="p-6 bg-slate-50 min-h-screen">
+      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-md overflow-hidden border border-gray-200">
+        
+        {/* Header Panel */}
+        <div className="bg-blue-600 px-6 py-4 text-white flex items-center space-x-2">
+          <span className="text-xl">📋</span>
+          <h2 className="text-lg font-bold">Isi Jurnal & Absensi Kelas</h2>
+        </div>
 
-          {/* Kelas Mengajar - MENGGUNAKAN LIST LENGKAP VII A - IX H */}
-          <div className="flex flex-col">
-            <label className="text-sm font-semibold mb-1">Kelas Mengajar</label>
-            <select
-              className="border p-2 rounded-md bg-white w-full"
-              value={formData.kelas}
-              onChange={(e) => setFormData({ ...formData, kelas: e.target.value })}
+        <div className="p-6 space-y-6">
+          
+          {/* Bagian 1: Pilih Kelas Mengajar */}
+          <div className="bg-white p-4 rounded-lg border border-gray-100 shadow-sm flex items-end space-x-4">
+            <div className="flex-1">
+              <label className="text-sm font-semibold text-gray-700 block mb-1">Pilih Kelas Mengajar</label>
+              <select
+                className="border p-2 rounded-md bg-white w-full text-sm"
+                value={formData.kelas}
+                onChange={(e) => {
+                  setFormData({ ...formData, kelas: e.target.value });
+                  setFormVisible(false);
+                }}
+              >
+                <option value="">-- Pilih Rombel --</option>
+                {LIST_KELAS_LENGKAP.map((kls) => (
+                  <option key={kls} value={kls}>Kelas {kls}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={handleBukaForm}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2 rounded-md shadow transition"
             >
-              <option value="">-- Pilih Kelas Mengajar --</option>
-              {LIST_KELAS_LENGKAP.map((kls) => (
-                <option key={kls} value={kls}>
-                  Kelas {kls}
-                </option>
-              ))}
-            </select>
+              Buka Form
+            </button>
           </div>
 
-          {/* Jam Pelajaran Ke */}
-          <div className="flex flex-col">
-            <label className="text-sm font-semibold mb-1">Jam Pelajaran Ke-</label>
-            <input
-              type="text"
-              placeholder="Contoh: 1-3 atau 4-6"
-              className="border p-2 rounded-md"
-              value={formData.jamKe}
-              onChange={(e) => setFormData({ ...formData, jamKe: e.target.value })}
-            />
-          </div>
-        </div>
+          {/* Form Utama (Hanya Tampil Saat Tombol Buka Form Diklik) */}
+          {formVisible && (
+            <form onSubmit={handleSubmitJurnal} className="space-y-6 animate-fadeIn">
+              
+              {/* Bagian 2: Detail Pembelajaran */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b pb-1">
+                  Detail Pembelajaran
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Mata Pelajaran</label>
+                    <input
+                      type="text"
+                      className="border p-2 rounded-md bg-gray-50 w-full text-sm font-medium text-gray-700 cursor-not-allowed"
+                      value={formData.mataPelajaran}
+                      disabled
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Jam Ke-</label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 1-2"
+                      className="border p-2 rounded-md w-full text-sm"
+                      value={formData.jamKe}
+                      onChange={(e) => setFormData({ ...formData, jamKe: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Rombel Belajar</label>
+                    <input
+                      type="text"
+                      className="border p-2 rounded-md bg-gray-50 w-full text-sm font-bold text-gray-600 cursor-not-allowed"
+                      value={formData.kelas.replace("-", " ")}
+                      disabled
+                    />
+                  </div>
+                </div>
 
-        {/* Materi Bahasan */}
-        <div className="flex flex-col">
-          <label className="text-sm font-semibold mb-1">Materi Pokok Pembahasan</label>
-          <input
-            type="text"
-            placeholder="Tuliskan materi atau bab yang dipelajari hari ini..."
-            className="border p-2 rounded-md"
-            value={formData.materi}
-            onChange={(e) => setFormData({ ...formData, materi: e.target.value })}
-          />
-        </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Materi Pokok Pembelajaran</label>
+                  <input
+                    type="text"
+                    placeholder="Tuliskan pokok pembahasan materi hari ini..."
+                    className="border p-2 rounded-md w-full text-sm"
+                    value={formData.materi}
+                    onChange={(e) => setFormData({ ...formData, materi: e.target.value })}
+                  />
+                </div>
 
-        {/* Catatan Aktivitas */}
-        <div className="flex flex-col">
-          <label className="text-sm font-semibold mb-1">Catatan Aktivitas & Hambatan Kelas</label>
-          <textarea
-            rows={3}
-            placeholder="Ceritakan jalannya KBM, penugasan, atau hambatan jika ada..."
-            className="border p-2 rounded-md"
-            value={formData.aktivitas}
-            onChange={(e) => setFormData({ ...formData, aktivitas: e.target.value })}
-          />
-        </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Catatan Hambatan / Aktivitas Umum</label>
+                  <input
+                    type="text"
+                    placeholder="Isi hambatan kelas secara umum jika ada..."
+                    className="border p-2 rounded-md w-full text-sm"
+                    value={formData.aktivitas}
+                    onChange={(e) => setFormData({ ...formData, aktivitas: e.target.value })}
+                  />
+                </div>
+              </div>
 
-        {/* Tabel Tabel Presensi Siswa Otomatis Muncul saat Kelas Dipilih */}
-        {formData.kelas && (
-          <div className="mt-6 border-t pt-4">
-            <h3 className="font-bold text-md mb-2 text-gray-700">
-              Daftar Hadir Siswa Kelas {formData.kelas} ({siswaFilter.length} Siswa)
-            </h3>
-            {siswaFilter.length === 0 ? (
-              <p className="text-sm text-red-500 italic">Belum ada data siswa terdaftar untuk kelas ini di database.</p>
-            ) : (
-              <div className="overflow-x-auto max-h-72 border rounded-md">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-semibold text-gray-600">No</th>
-                      <th className="px-4 py-2 text-left font-semibold text-gray-600">NISN</th>
-                      <th className="px-4 py-2 text-left font-semibold text-gray-600">Nama Siswa</th>
-                      <th className="px-4 py-2 text-center font-semibold text-gray-600">Status Presensi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {siswaFilter.map((s, index) => (
-                      <tr key={s.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2">{index + 1}</td>
-                        <td className="px-4 py-2 text-gray-500">{s.nisn}</td>
-                        <td className="px-4 py-2 font-medium text-gray-800">{s.name}</td>
-                        <td className="px-4 py-2 text-center">
-                          <div className="flex justify-center space-x-2">
-                            {["H", "S", "I", "A"].map((status) => (
+              {/* Bagian 3: Daftar Absensi & Catatan Khusus Siswa */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider border-b pb-1">
+                  Daftar Absensi & Catatan Khusus Siswa
+                </h3>
+
+                {siswaFilter.length === 0 ? (
+                  <p className="text-sm text-amber-600 italic p-4 bg-amber-50 rounded-md border border-amber-200">
+                    Tidak ditemukan data siswa aktif terdaftar di kelas ini.
+                  </p>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-inner">
+                    
+                    {/* Header Row Tabel */}
+                    <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center text-xs font-bold text-gray-600">
+                      <div className="w-1/2">Nama Siswa / Kejadian Spesifik</div>
+                      <div className="w-1/2 text-right pr-12">Status Absen</div>
+                    </div>
+
+                    {/* Loop Baris Siswa (Desain Berdasarkan Screenshot Laravel) */}
+                    <div className="divide-y divide-gray-100 max-h-[500px] overflow-y-auto">
+                      {siswaFilter.map((s) => (
+                        <div key={s.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-slate-50 transition gap-3">
+                          
+                          {/* Sisi Kiri: Nama & Kolom Catatan KBM Siswa */}
+                          <div className="w-full md:w-3/5 space-y-2">
+                            <span className="text-sm font-bold text-gray-800 block uppercase">{s.name}</span>
+                            
+                            <div className="flex items-center space-x-2 w-full">
+                              {/* Dropdown Tipe Kejadian KBM */}
+                              <select
+                                className="border px-2 py-1.5 rounded bg-white text-xs font-semibold border-gray-300 text-gray-700 focus:ring-1 focus:ring-blue-500"
+                                value={logTypes[s.id] || "apresiasi"}
+                                onChange={(e) => handleLogTypeChange(s.id, e.target.value)}
+                              >
+                                <option value="apresiasi">👍 Apresiasi</option>
+                                <option value="pelanggaran">⚠️ Pelanggaran</option>
+                              </select>
+
+                              {/* Kolom Teks Log/Kejadian Khusus KBM */}
+                              <input
+                                type="text"
+                                placeholder="Isi jika siswa aktif presentasi / membuat pelanggaran khusus..."
+                                className="border px-3 py-1 text-xs rounded w-full border-gray-300 focus:ring-1 focus:ring-blue-500"
+                                value={logNotes[s.id] || ""}
+                                onChange={(e) => handleNoteChange(s.id, e.target.value)}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Sisi Kanan: Status Absensi (Radio Bulat Berwarna) */}
+                          <div className="flex items-center justify-start md:justify-end space-x-3 w-full md:w-2/5 pr-4">
+                            {[
+                              { code: "H", color: "text-green-600 border-green-500 bg-green-50" },
+                              { code: "S", color: "text-amber-600 border-amber-500 bg-amber-50" },
+                              { code: "I", color: "text-blue-600 border-blue-500 bg-blue-50" },
+                              { code: "A", color: "text-red-600 border-red-500 bg-red-50" }
+                            ].map((opt) => (
                               <label
-                                key={status}
-                                className={`cursor-pointer px-3 py-1 text-xs font-bold rounded-md border ${
-                                  (absending[s.id] || "H") === status
-                                    ? status === "H" ? "bg-green-100 text-green-700 border-green-400"
-                                      : status === "S" ? "bg-yellow-100 text-yellow-700 border-yellow-400"
-                                      : status === "I" ? "bg-blue-100 text-blue-700 border-blue-400"
-                                      : "bg-red-100 text-red-700 border-red-400"
-                                    : "bg-white text-gray-500 border-gray-200"
+                                key={opt.code}
+                                className={`flex flex-col items-center justify-center border rounded-md w-12 h-10 cursor-pointer text-xs font-bold transition select-none ${
+                                  (absensi[s.id] || "H") === opt.code
+                                    ? `${opt.color} border-2 scale-105 shadow-sm`
+                                    : "bg-white text-gray-400 border-gray-200 hover:bg-gray-50"
                                 }`}
                               >
                                 <input
                                   type="radio"
-                                  name={`absensi-${s.id}`}
-                                  value={status}
-                                  checked={(absensi[s.id] || "H") === status}
-                                  onChange={() => handleStatusChange(s.id, status)}
+                                  name={`status-${s.id}`}
+                                  value={opt.code}
+                                  checked={(absensi[s.id] || "H") === opt.code}
+                                  onChange={() => handleStatusChange(s.id, opt.code)}
                                   className="hidden"
                                 />
-                                {status === "H" ? "Hadir" : status === "S" ? "Sakit" : status === "I" ? "Izin" : "Alfa"}
+                                <span>{opt.code}</span>
                               </label>
                             ))}
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
 
-        <div className="flex justify-end space-x-2 pt-4 border-t">
-          <button
-            type="button"
-            className="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50"
-            onClick={() => setFormData({ ...formData, kelas: "", jamKe: "", materi: "", aktivitas: "" })}
-          >
-            Batal
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md shadow-sm disabled:opacity-50"
-          >
-            {loading ? "Menyimpan..." : "Simpan Jurnal"}
-          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                  </div>
+                )}
+              </div>
+
+              {/* Bagian Bawah Form Aksi */}
+              <div className="flex justify-end space-x-2 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setFormVisible(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || siswaFilter.length === 0}
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-md shadow disabled:opacity-50 transition flex items-center space-x-1"
+                >
+                  <span>💾</span>
+                  <span>{loading ? "Menyimpan Jurnal..." : "Simpan Jurnal"}</span>
+                </button>
+              </div>
+
+            </form>
+          )}
+
         </div>
-      </form>
+      </div>
     </div>
   );
 };
